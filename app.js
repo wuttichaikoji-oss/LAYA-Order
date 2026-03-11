@@ -18,7 +18,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const FIRESTORE_DATABASE_ID = window.LAYA_FIRESTORE_DATABASE_ID || "laya";
-const MENU_CROP = { x: 0.05, y: 0.24, width: 0.9, height: 0.56 };
+const MENU_CROP = { x: 0.03, y: 0.34, width: 0.94, height: 0.42 };
 const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|paraq?ee\b|cover\s*\d+)/i;
 
 const els = {
@@ -58,6 +58,8 @@ const state = {
   voiceEnabled: loadBoolean("laya_voice_enabled", false),
   alertMap: new Map(),
   drag: null,
+  ocrQueue: [],
+  ocrRunning: false,
 };
 
 const PLACEHOLDER_IMAGE =
@@ -187,7 +189,7 @@ async function handleOrderSubmit(event) {
       guestName: "",
       notes: "",
       imageUrl: "",
-      rawText: draftText || "กำลังอ่านข้อความเมนูจากรูป...",
+      rawText: draftText || "กำลังอ่านชื่อเมนูจากรูป...",
       readingText: draftText || "",
       items: draftText ? buildItemsFromText(draftText) : [],
       ocrStatus: draftText ? "manual" : "queued",
@@ -200,42 +202,91 @@ async function handleOrderSubmit(event) {
     };
 
     const orderRef = await addDoc(collection(state.db, "orders"), initialDoc);
-
-    setLoading(true, "กำลังอัปโหลดรูปออเดอร์...");
-    const optimizedBlob = await optimizeImage(file);
-    const fileName = `${Date.now()}-${sanitizeFileName(file.name || "order.jpg")}`;
-    const storageRef = ref(state.storage, `orders/${orderRef.id}/${fileName}`);
-    await uploadBytes(storageRef, optimizedBlob, {
-      contentType: optimizedBlob.type || file.type || "image/jpeg",
-    });
-    const imageUrl = await getDownloadURL(storageRef);
-    await updateDoc(orderRef, {
-      imageUrl,
-      updatedAt: serverTimestamp(),
-      ocrStatus: draftText ? "manual" : "processing",
-    });
-
-    if (!draftText) {
-      setLoading(true, "กำลังอ่านชื่อเมนูจากรูป (OCR)...");
-      const rawText = await runOCR(file);
-      const menuText = cleanMenuText(rawText);
-      const items = buildItemsFromText(menuText);
-      await updateDoc(orderRef, {
-        rawText: menuText || "OCR อ่านชื่อเมนูไม่ชัด กรุณาเพิ่มรายการด้วยมือ",
-        readingText: menuText || "",
-        items,
-        ocrStatus: menuText ? "done" : "error",
-        updatedAt: serverTimestamp(),
-      });
-    }
+    queueOrderProcessing(orderRef.id, file, draftText);
 
     resetForm();
-    setFormStatus("ส่งออเดอร์เข้าบอร์ดครัวเรียบร้อยแล้ว", "success");
+    setLoading(false);
+    setFormStatus(
+      draftText
+        ? "ส่งออเดอร์แล้ว รูปกำลังอัปโหลดเข้าระบบด้านหลัง"
+        : "ส่งออเดอร์แล้ว รูปจะขึ้นก่อน และ OCR จะเติมชื่อเมนูให้ต่ออัตโนมัติ",
+      "success"
+    );
   } catch (error) {
     console.error(error);
-    setFormStatus(`ส่งออเดอร์ไม่สำเร็จ: ${error.message}`, "error");
-  } finally {
     setLoading(false);
+    setFormStatus(`ส่งออเดอร์ไม่สำเร็จ: ${error.message}`, "error");
+  }
+}
+
+function queueOrderProcessing(orderId, file, draftText) {
+  uploadOrderImage(orderId, file, draftText).catch(async (error) => {
+    console.error(error);
+    await updateOrder(orderId, {
+      rawText: "อัปโหลดรูปไม่สำเร็จ กรุณาลองส่งใหม่อีกครั้ง",
+      readingText: "",
+      ocrStatus: "error",
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+async function uploadOrderImage(orderId, file, draftText) {
+  const optimizedBlob = await optimizeImage(file);
+  const fileName = `${Date.now()}-${sanitizeFileName(file.name || "order.jpg")}`;
+  const storageRef = ref(state.storage, `orders/${orderId}/${fileName}`);
+  await uploadBytes(storageRef, optimizedBlob, {
+    contentType: optimizedBlob.type || file.type || "image/jpeg",
+  });
+  const imageUrl = await getDownloadURL(storageRef);
+
+  await updateDoc(doc(state.db, "orders", orderId), {
+    imageUrl,
+    updatedAt: serverTimestamp(),
+    ocrStatus: draftText ? "manual" : "processing",
+  });
+
+  if (!draftText) {
+    enqueueOcrJob(orderId, optimizedBlob);
+  }
+}
+
+function enqueueOcrJob(orderId, fileOrBlob) {
+  state.ocrQueue.push({ orderId, fileOrBlob });
+  pumpOcrQueue();
+}
+
+async function pumpOcrQueue() {
+  if (state.ocrRunning || !state.ocrQueue.length) return;
+
+  state.ocrRunning = true;
+  const job = state.ocrQueue.shift();
+
+  try {
+    const rawText = await runOCR(job.fileOrBlob);
+    const menuText = cleanMenuText(rawText);
+    const items = buildItemsFromText(menuText);
+    await updateDoc(doc(state.db, "orders", job.orderId), {
+      rawText: menuText || "OCR อ่านชื่อเมนูไม่ชัด กรุณาเพิ่มรายการด้วยมือ",
+      readingText: menuText || "",
+      items,
+      ocrStatus: menuText ? "done" : "error",
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error(error);
+    await updateDoc(doc(state.db, "orders", job.orderId), {
+      rawText: "OCR อ่านชื่อเมนูไม่สำเร็จ กรุณากด + เพิ่ม หรือแก้ไขชื่อเมนูด้วยมือ",
+      readingText: "",
+      items: [],
+      ocrStatus: "error",
+      updatedAt: serverTimestamp(),
+    });
+  } finally {
+    state.ocrRunning = false;
+    if (state.ocrQueue.length) {
+      window.setTimeout(() => pumpOcrQueue(), 60);
+    }
   }
 }
 
@@ -285,7 +336,7 @@ function renderOrders() {
         row.dataset.itemId = item.id;
         row.innerHTML = `
           <input type="checkbox" ${item.done ? "checked" : ""} />
-          <input type="text" value="${escapeAttribute(item.text || "")}" />
+          <textarea class="item-textarea" rows="1">${escapeHtml(item.text || "")}</textarea>
         `;
         itemsWrap.appendChild(row);
       });
@@ -298,6 +349,7 @@ function renderOrders() {
     completeBtn.disabled = !!order.completed;
     dragBtn.hidden = !order.completed;
 
+    autoResizeTextareas(node);
     attachCardEvents(node, order);
     fragment.appendChild(node);
   }
@@ -340,21 +392,20 @@ function attachCardEvents(card, order) {
     if (target.type === "checkbox") {
       const items = collectItemsFromCard(card);
       await syncItems(order.id, items);
-      return;
     }
-    syncItemsDebounced();
   });
 
   itemsWrap.addEventListener("input", (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement) || target.type !== "text") return;
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    autoResizeTextarea(target);
     syncItemsDebounced();
   });
 
   itemsWrap.addEventListener("keydown", (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement) || target.type !== "text") return;
-    if (event.key === "Enter") {
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       target.blur();
     }
@@ -368,7 +419,7 @@ function collectItemsFromCard(card) {
   return rows
     .map((row) => {
       const checkbox = row.querySelector('input[type="checkbox"]');
-      const textInput = row.querySelector('input[type="text"]');
+      const textInput = row.querySelector("textarea");
       return {
         id: row.dataset.itemId || uid(),
         text: textInput?.value?.trim() || "",
@@ -563,15 +614,7 @@ function buildItemsFromText(text) {
 
 async function runOCR(file) {
   const ocrBlob = await buildMenuCropBlob(file);
-  const result = await window.Tesseract.recognize(ocrBlob, "eng+tha", {
-    logger: (message) => {
-      if (message.status === "recognizing text") {
-        const pct = Math.round((message.progress || 0) * 100);
-        setLoading(true, `กำลังอ่านชื่อเมนูจากรูป ${pct}%`);
-      }
-    },
-  });
-
+  const result = await window.Tesseract.recognize(ocrBlob, "eng");
   return (result?.data?.text || "").trim();
 }
 
@@ -587,11 +630,22 @@ async function buildMenuCropBlob(file) {
     const canvas = document.createElement("canvas");
     canvas.width = cropWidth;
     canvas.height = cropHeight;
-    const ctx = canvas.getContext("2d", { alpha: false });
+    const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
     ctx.drawImage(bitmap, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
 
+    const imageData = ctx.getImageData(0, 0, cropWidth, cropHeight);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      const boosted = avg > 170 ? 255 : Math.max(0, avg - 28);
+      data[i] = boosted;
+      data[i + 1] = boosted;
+      data[i + 2] = boosted;
+    }
+    ctx.putImageData(imageData, 0, 0);
+
     return await new Promise((resolve) => {
-      canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", 0.95);
+      canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", 0.86);
     });
   } catch (error) {
     console.warn("OCR crop skipped", error);
@@ -604,7 +658,7 @@ async function optimizeImage(file) {
     if (!("createImageBitmap" in window)) return file;
 
     const bitmap = await createImageBitmap(file);
-    const maxSide = 1800;
+    const maxSide = 1280;
     const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * ratio));
     const height = Math.max(1, Math.round(bitmap.height * ratio));
@@ -619,7 +673,7 @@ async function optimizeImage(file) {
       canvas.toBlob(
         (blob) => resolve(blob || file),
         "image/jpeg",
-        0.88
+        0.8
       );
     });
   } catch (error) {
@@ -711,6 +765,15 @@ function dedupeLines(lines) {
   }
 
   return result;
+}
+
+function autoResizeTextareas(root = document) {
+  root.querySelectorAll(".item-textarea").forEach((textarea) => autoResizeTextarea(textarea));
+}
+
+function autoResizeTextarea(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
 }
 
 function saveConfigFromDialog() {
@@ -846,6 +909,13 @@ function escapeAttribute(value) {
   return String(value)
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
