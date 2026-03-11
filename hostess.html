@@ -1,4 +1,3 @@
-window.LAYA_FIRESTORE_DATABASE_ID = "laya";
 window.LAYA_FIREBASE_CONFIG = {
   apiKey: "AIzaSyB7t2WW7zmZnXVWXujKE0ayYjB-dB3MlpI",
   authDomain: "laya-order.firebaseapp.com",

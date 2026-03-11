@@ -18,7 +18,8 @@ import {
   getDownloadURL,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
-const FIRESTORE_DATABASE_ID = window.LAYA_FIRESTORE_DATABASE_ID || "laya";
+const FIRESTORE_DATABASE_ID = String(window.LAYA_FIRESTORE_DATABASE_ID || "").trim();
+const PAGE_MODE = document.body?.dataset.page || "dashboard";
 const MENU_CROP = { x: 0.03, y: 0.34, width: 0.94, height: 0.42 };
 const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|paraq?ee\b|cover\s*\d+)/i;
 
@@ -60,7 +61,8 @@ const state = {
   storage: null,
   orders: [],
   orderMap: new Map(),
-  voiceEnabled: loadBoolean("laya_voice_enabled", false),
+  voiceEnabled: loadBoolean("laya_voice_enabled", PAGE_MODE === "kitchen"),
+  audioContext: null,
   alertMap: new Map(),
   drag: null,
   ocrQueue: [],
@@ -122,19 +124,28 @@ function bindStaticEvents() {
     els.orderForm.addEventListener("submit", handleOrderSubmit);
   }
 
+  document.addEventListener("pointerdown", initAudioContextOnce, { passive: true, once: true });
+  document.addEventListener("keydown", initAudioContextOnce, { passive: true, once: true });
+
   if (hasVoiceControls) {
-    els.voiceToggleBtn.addEventListener("click", () => {
+    els.voiceToggleBtn.addEventListener("click", async () => {
       state.voiceEnabled = !state.voiceEnabled;
       localStorage.setItem("laya_voice_enabled", String(state.voiceEnabled));
       syncVoiceButton();
       if (state.voiceEnabled) {
+        await initAudioContextOnce();
+        playAlertSound();
         speakAlertPhrase();
       } else {
         window.speechSynthesis?.cancel();
       }
     });
 
-    els.testVoiceBtn.addEventListener("click", () => speakAlertPhrase());
+    els.testVoiceBtn.addEventListener("click", async () => {
+      await initAudioContextOnce();
+      playAlertSound();
+      speakAlertPhrase();
+    });
   }
 
   if (hasSetupDialog && els.openSetupBtn) {
@@ -162,7 +173,7 @@ function bindStaticEvents() {
 function initFirebase(config) {
   try {
     const app = initializeApp(config);
-    state.db = getFirestore(app, FIRESTORE_DATABASE_ID);
+    state.db = FIRESTORE_DATABASE_ID ? getFirestore(app, FIRESTORE_DATABASE_ID) : getFirestore(app);
     state.storage = getStorage(app);
     els.setupNotice?.classList.add("hidden");
     if (hasBoard) initRealtimeOrders();
@@ -404,10 +415,22 @@ function renderOrders() {
 
     const completeBtn = node.querySelector(".js-mark-complete");
     const dragBtn = node.querySelector(".js-drag-delete");
+    const addItemBtn = node.querySelector(".js-add-item");
+    const canEditMenuText = PAGE_MODE !== "kitchen";
+    const canManageStatus = PAGE_MODE !== "hostess";
 
     completeBtn.textContent = order.completed ? "บิลนี้เสร็จแล้ว" : "ทำบิลนี้เสร็จแล้ว";
-    completeBtn.disabled = !!order.completed;
-    dragBtn.hidden = !order.completed;
+    completeBtn.disabled = !!order.completed || !canManageStatus;
+    dragBtn.hidden = !order.completed || !canManageStatus;
+    if (addItemBtn) addItemBtn.hidden = !canEditMenuText;
+
+    node.querySelectorAll(".item-textarea").forEach((textarea) => {
+      textarea.readOnly = !canEditMenuText;
+      if (!canEditMenuText) textarea.setAttribute("tabindex", "-1");
+    });
+    node.querySelectorAll('.item-row input[type="checkbox"]').forEach((checkbox) => {
+      checkbox.disabled = !canManageStatus;
+    });
 
     autoResizeTextareas(node);
     attachCardEvents(node, order);
@@ -438,27 +461,32 @@ function attachCardEvents(card, order) {
     );
   });
 
-  addItemBtn.addEventListener("click", async () => {
-    const itemText = window.prompt("เพิ่มรายการอาหาร", "");
-    if (!itemText || !itemText.trim()) return;
-    const currentItems = Array.isArray(state.orderMap.get(order.id)?.items)
-      ? [...state.orderMap.get(order.id).items]
-      : [];
-    currentItems.push({ id: uid(), text: itemText.trim(), done: false });
-    await syncItems(order.id, currentItems);
-  });
-
-  completeBtn.addEventListener("click", async () => {
-    await updateOrder(order.id, {
-      completed: true,
-      updatedAt: serverTimestamp(),
+  if (PAGE_MODE !== "kitchen") {
+    addItemBtn?.addEventListener("click", async () => {
+      const itemText = window.prompt("เพิ่มรายการอาหาร", "");
+      if (!itemText || !itemText.trim()) return;
+      const currentItems = Array.isArray(state.orderMap.get(order.id)?.items)
+        ? [...state.orderMap.get(order.id).items]
+        : [];
+      currentItems.push({ id: uid(), text: itemText.trim(), done: false });
+      await syncItems(order.id, currentItems);
     });
-  });
+  }
+
+  if (PAGE_MODE !== "hostess") {
+    completeBtn?.addEventListener("click", async () => {
+      await updateOrder(order.id, {
+        completed: true,
+        updatedAt: serverTimestamp(),
+      });
+    });
+  }
 
   itemsWrap.addEventListener("change", async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
     if (target.type === "checkbox") {
+      if (PAGE_MODE === "hostess") return;
       const items = collectItemsFromCard(card);
       await syncItems(order.id, items);
     }
@@ -468,7 +496,7 @@ function attachCardEvents(card, order) {
     const target = event.target;
     if (!(target instanceof HTMLTextAreaElement)) return;
     autoResizeTextarea(target);
-    syncItemsDebounced();
+    if (PAGE_MODE !== "kitchen") syncItemsDebounced();
   });
 
   itemsWrap.addEventListener("keydown", (event) => {
@@ -480,7 +508,9 @@ function attachCardEvents(card, order) {
     }
   });
 
-  dragBtn.addEventListener("pointerdown", (event) => startDragDelete(event, order.id, card));
+  if (PAGE_MODE !== "hostess") {
+    dragBtn?.addEventListener("pointerdown", (event) => startDragDelete(event, order.id, card));
+  }
 }
 
 function collectItemsFromCard(card) {
@@ -631,7 +661,7 @@ function updateTimersAndAlerts() {
 }
 
 function maybeTriggerAlert(order, elapsedMs) {
-  if (!state.voiceEnabled || document.visibilityState !== "visible") return;
+  if (!state.voiceEnabled) return;
   if (elapsedMs < 30 * 60 * 1000) return;
 
   const lastAlertAt = state.alertMap.get(order.id) || 0;
@@ -639,11 +669,55 @@ function maybeTriggerAlert(order, elapsedMs) {
   if (now - lastAlertAt < 5 * 60 * 1000) return;
 
   state.alertMap.set(order.id, now);
+  playAlertSound();
   speakAlertPhrase(order.alertPhrase || "ออเดอร์ยังไม่เสร็จนะคะเชฟ");
+}
+
+async function initAudioContextOnce() {
+  if (!("AudioContext" in window || "webkitAudioContext" in window)) return null;
+  try {
+    if (!state.audioContext) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      state.audioContext = new AudioContextClass();
+    }
+    if (state.audioContext.state === "suspended") {
+      await state.audioContext.resume();
+    }
+    return state.audioContext;
+  } catch (error) {
+    console.warn("AudioContext init failed", error);
+    return null;
+  }
+}
+
+function playAlertSound() {
+  initAudioContextOnce().then((audioContext) => {
+    if (!audioContext) return;
+    const beeps = [0, 0.75, 1.5];
+    const baseTime = audioContext.currentTime + 0.02;
+    beeps.forEach((offset, index) => {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      oscillator.type = "square";
+      oscillator.frequency.value = index === 1 ? 920 : 780;
+      gainNode.gain.setValueAtTime(0.0001, baseTime + offset);
+      gainNode.gain.exponentialRampToValueAtTime(0.16, baseTime + offset + 0.02);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, baseTime + offset + 0.28);
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      oscillator.start(baseTime + offset);
+      oscillator.stop(baseTime + offset + 0.3);
+    });
+  }).catch((error) => console.warn("Alert sound failed", error));
 }
 
 function speakAlertPhrase(text = "ออเดอร์ยังไม่เสร็จนะคะเชฟ") {
   if (!("speechSynthesis" in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+  } catch (_) {
+    // ignore
+  }
   for (let i = 0; i < 3; i += 1) {
     window.setTimeout(() => {
       const utterance = new SpeechSynthesisUtterance(text);
