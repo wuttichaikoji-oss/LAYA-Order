@@ -1,7 +1,10 @@
-const CACHE_NAME = 'laya-order-tracker-v1';
+const CACHE_NAME = 'laya-order-tracker-v2';
 const APP_SHELL = [
   './',
   './index.html',
+  './hostess.html',
+  './kitchen.html',
+  './dashboard.html',
   './styles.css',
   './app.js',
   './firebase-config.js',
