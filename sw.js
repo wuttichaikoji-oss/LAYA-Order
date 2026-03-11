@@ -1,4 +1,4 @@
-const CACHE_NAME = 'laya-order-tracker-v4';
+const CACHE_NAME = 'laya-order-tracker-v5-defaultdb';
 const APP_SHELL = [
   './',
   './index.html',

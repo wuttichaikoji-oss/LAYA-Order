@@ -18,7 +18,7 @@ import {
   getDownloadURL,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
-const FIRESTORE_DATABASE_ID = window.LAYA_FIRESTORE_DATABASE_ID || "laya";
+const FIRESTORE_DATABASE_ID = String(window.LAYA_FIRESTORE_DATABASE_ID || "").trim();
 const MENU_CROP = { x: 0.03, y: 0.34, width: 0.94, height: 0.42 };
 const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|paraq?ee\b|cover\s*\d+)/i;
 
@@ -162,13 +162,14 @@ function bindStaticEvents() {
 function initFirebase(config) {
   try {
     const app = initializeApp(config);
-    state.db = getFirestore(app, FIRESTORE_DATABASE_ID);
+    state.db = FIRESTORE_DATABASE_ID ? getFirestore(app, FIRESTORE_DATABASE_ID) : getFirestore(app);
     state.storage = getStorage(app);
     els.setupNotice?.classList.add("hidden");
     if (hasBoard) initRealtimeOrders();
   } catch (error) {
     console.error(error);
-    showSetupNotice(`เชื่อม Firebase ไม่สำเร็จ: ${error.message}`);
+    const hint = FIRESTORE_DATABASE_ID ? ` (Firestore database: ${FIRESTORE_DATABASE_ID})` : "";
+    showSetupNotice(`เชื่อม Firebase ไม่สำเร็จ${hint}: ${error.message}`);
   }
 }
 
