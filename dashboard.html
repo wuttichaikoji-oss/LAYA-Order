@@ -1,11 +1,4 @@
-rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /orders/{orderId}/{allPaths=**} {
-      allow read: if true;
-      allow write: if request.resource != null
-                   && request.resource.size < 8 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-    }
-  }
+{
+  "indexes": [],
+  "fieldOverrides": []
 }
