@@ -18,7 +18,7 @@
       <div>
         <p class="eyebrow">Realtime Kitchen Board</p>
         <h1>Laya Kitchen Order Tracker</h1>
-        <p class="subtext">อัปโหลดรูปออเดอร์ → OCR อ่านข้อความ → ครัวติ๊กเมนูที่เสร็จแล้วได้ทันที</p>
+        <p class="subtext">อัปโหลดรูปบิล → OCR อ่านเฉพาะโซนเมนู → ครัวติ๊กเมนูที่เสร็จแล้วได้ทันที</p>
       </div>
       <div class="topbar-actions">
         <button id="voiceToggleBtn" class="ghost-btn" type="button">🔔 เปิดเสียงแจ้งเตือน</button>
@@ -32,54 +32,31 @@
     <main class="grid-layout">
       <section class="panel input-panel">
         <div class="panel-head">
-          <h2>เพิ่มออเดอร์ใหม่</h2>
+          <h2>สแกนเมนูใหม่</h2>
           <span class="badge">Hostess</span>
         </div>
         <form id="orderForm" class="order-form">
-          <div class="field-grid two-col">
-            <label>
-              <span>เลขบิล</span>
-              <input id="billNo" type="text" placeholder="เช่น B-240311-01" />
-            </label>
-            <label>
-              <span>โต๊ะ / ห้อง</span>
-              <input id="tableNo" type="text" placeholder="เช่น Table 6 / A105" />
-            </label>
-          </div>
-
-          <div class="field-grid two-col">
-            <label>
-              <span>ชื่อ Hostess</span>
-              <input id="hostessName" type="text" placeholder="เช่น Noi" />
-            </label>
-            <label>
-              <span>ชื่อลูกค้า / หมายเหตุหัวบิล</span>
-              <input id="guestName" type="text" placeholder="ใส่ถ้ามี" />
-            </label>
-          </div>
-
-          <label>
-            <span>โน้ตเพิ่มเติม</span>
-            <textarea id="notes" rows="3" placeholder="เช่น No spicy / VIP / รีบมาก"></textarea>
-          </label>
-
           <label class="upload-box">
             <input id="photoInput" type="file" accept="image/*" capture="environment" />
-            <span class="upload-title">แตะเพื่อถ่ายรูปหรือเลือกรูปออเดอร์</span>
-            <span class="upload-sub">รองรับกล้องมือถือ / iPad และรูปจากเครื่อง</span>
+            <span class="upload-title">แตะเพื่อถ่ายรูปหรือเลือกรูปบิล</span>
+            <span class="upload-sub">ระบบจะโฟกัสอ่านเฉพาะโซนเมนู ไม่อ่านหัวบิล</span>
           </label>
 
           <div id="photoPreviewWrap" class="photo-preview-wrap hidden">
             <img id="photoPreview" alt="ตัวอย่างรูปออเดอร์" />
+            <div class="scan-overlay">
+              <div class="scan-overlay__frame"></div>
+              <span class="scan-overlay__label">โซนที่ OCR จะอ่านเมนู</span>
+            </div>
           </div>
 
           <label>
-            <span>ตรวจแก้ข้อความ OCR ก่อนบันทึก (ไม่บังคับ)</span>
-            <textarea id="ocrTextDraft" rows="6" placeholder="ถ้าเว้นว่าง ระบบจะอ่านจากรูปให้อัตโนมัติ"></textarea>
+            <span>ข้อความเมนู (ไม่บังคับ)</span>
+            <textarea id="ocrTextDraft" rows="5" placeholder="ถ้าระบบอ่านไม่ตรง พิมพ์ชื่อเมนูเอง เช่น&#10;Baklava&#10;Satay Chicken"></textarea>
           </label>
 
           <div class="helper-row">
-            <small>ระบบจะสร้างรายการอาหารจากข้อความที่อ่านได้ และสามารถแก้ไข/เพิ่มรายการในบิลภายหลังได้</small>
+            <small>ถ้าไม่พิมพ์ ระบบจะอ่านจากรูปให้อัตโนมัติ และแยกเป็นรายการให้ครัวติ๊กได้ทันที</small>
           </div>
 
           <button id="submitBtn" class="primary-btn" type="submit">อัปโหลดและส่งเข้าบอร์ดครัว</button>
@@ -91,7 +68,7 @@
         <div class="panel-head wrap">
           <div>
             <h2>กระดานออเดอร์สด</h2>
-            <p class="muted">สีกรอบ: 0–15 นาที = เขียว, มากกว่า 15 = เหลือง, มากกว่า 25 = แดง, มากกว่า 30 = แดงกระพริบ + เสียงเตือน</p>
+            <p class="muted">การ์ดจะแสดงแบบกะทัดรัดเพื่อให้เห็นหลายออเดอร์พร้อมกัน</p>
           </div>
           <div class="board-stats">
             <div class="stat-card">
@@ -160,61 +137,38 @@
   </dialog>
 
   <template id="orderCardTemplate">
-    <article class="order-card">
-      <div class="order-top">
+    <article class="order-card compact-card">
+      <div class="order-top compact-top">
         <div>
-          <div class="order-meta-row">
-            <span class="bill-chip js-bill"></span>
-            <span class="table-chip js-table"></span>
-            <span class="status-pill js-status"></span>
-          </div>
           <h3 class="order-title js-title"></h3>
           <p class="meta-line js-meta"></p>
         </div>
-        <div class="timer-wrap">
+        <div class="timer-wrap compact-timer">
           <span class="timer-label">เวลาค้าง</span>
           <strong class="timer-value js-elapsed"></strong>
+          <span class="status-pill js-status"></span>
         </div>
       </div>
 
-      <div class="order-content-grid">
-        <div class="image-panel">
+      <div class="compact-grid">
+        <div class="image-panel compact-image-panel">
           <img class="js-image" alt="รูปออเดอร์" />
         </div>
 
-        <div class="details-panel">
-          <div class="detail-block">
-            <div class="detail-head">
-              <strong>ข้อความที่อ่านได้จากรูป</strong>
+        <div class="compact-main">
+          <div class="detail-head compact-detail-head">
+            <strong>เมนู</strong>
+            <div class="item-actions compact-actions-top">
               <span class="small muted js-ocr-state"></span>
+              <button type="button" class="mini-btn js-add-item">+ เพิ่ม</button>
             </div>
-            <pre class="ocr-box js-raw"></pre>
           </div>
-
-          <div class="detail-block">
-            <div class="detail-head">
-              <strong>คำอ่าน / ข้อความแก้ไขเพิ่มเติม</strong>
-              <button type="button" class="mini-btn js-save-reading">บันทึก</button>
-            </div>
-            <textarea class="reading-box js-reading" rows="4"></textarea>
-          </div>
-
-          <div class="detail-block">
-            <div class="detail-head space-between">
-              <strong>รายการที่ต้องทำ</strong>
-              <div class="item-actions">
-                <button type="button" class="mini-btn js-add-item">+ เพิ่มรายการ</button>
-                <button type="button" class="mini-btn js-save-items">บันทึกรายการ</button>
-              </div>
-            </div>
-            <div class="items-list js-items"></div>
-          </div>
+          <div class="items-list js-items"></div>
         </div>
       </div>
 
-      <div class="order-bottom">
-        <div class="note-box js-notes"></div>
-        <div class="bottom-actions">
+      <div class="order-bottom compact-bottom">
+        <div class="bottom-actions compact-actions-bottom">
           <button type="button" class="ghost-btn js-mark-complete">ทำบิลนี้เสร็จแล้ว</button>
           <button type="button" class="drag-btn js-drag-delete" hidden>ลากไปถังขยะ</button>
         </div>

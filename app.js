@@ -17,13 +17,12 @@ import {
   getDownloadURL,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
+const FIRESTORE_DATABASE_ID = window.LAYA_FIRESTORE_DATABASE_ID || "laya";
+const MENU_CROP = { x: 0.05, y: 0.24, width: 0.9, height: 0.56 };
+const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|paraq?ee\b|cover\s*\d+)/i;
+
 const els = {
   orderForm: document.getElementById("orderForm"),
-  billNo: document.getElementById("billNo"),
-  tableNo: document.getElementById("tableNo"),
-  hostessName: document.getElementById("hostessName"),
-  guestName: document.getElementById("guestName"),
-  notes: document.getElementById("notes"),
   photoInput: document.getElementById("photoInput"),
   photoPreviewWrap: document.getElementById("photoPreviewWrap"),
   photoPreview: document.getElementById("photoPreview"),
@@ -123,7 +122,7 @@ function bindStaticEvents() {
 function initFirebase(config) {
   try {
     const app = initializeApp(config);
-    state.db = getFirestore(app);
+    state.db = getFirestore(app, FIRESTORE_DATABASE_ID);
     state.storage = getStorage(app);
     els.setupNotice.classList.add("hidden");
     initRealtimeOrders();
@@ -169,18 +168,8 @@ async function handleOrderSubmit(event) {
     return;
   }
 
-  const billNo = els.billNo.value.trim();
-  const tableNo = els.tableNo.value.trim();
-  const hostessName = els.hostessName.value.trim();
-  const guestName = els.guestName.value.trim();
-  const notes = els.notes.value.trim();
-  const draftText = els.ocrTextDraft.value.trim();
+  const draftText = cleanMenuText(els.ocrTextDraft.value.trim());
   const file = els.photoInput.files?.[0];
-
-  if (!billNo && !tableNo) {
-    setFormStatus("กรุณาใส่เลขบิลหรือโต๊ะ/ห้องอย่างน้อย 1 ช่อง", "error");
-    return;
-  }
 
   if (!file) {
     setFormStatus("กรุณาแนบรูปออเดอร์ก่อนส่งเข้าบอร์ด", "error");
@@ -192,13 +181,13 @@ async function handleOrderSubmit(event) {
 
     const createdAtMs = Date.now();
     const initialDoc = {
-      billNo,
-      tableNo,
-      hostessName,
-      guestName,
-      notes,
+      billNo: "",
+      tableNo: "",
+      hostessName: "",
+      guestName: "",
+      notes: "",
       imageUrl: "",
-      rawText: draftText || "กำลังอ่านข้อความจากรูป...",
+      rawText: draftText || "กำลังอ่านข้อความเมนูจากรูป...",
       readingText: draftText || "",
       items: draftText ? buildItemsFromText(draftText) : [],
       ocrStatus: draftText ? "manual" : "queued",
@@ -227,14 +216,15 @@ async function handleOrderSubmit(event) {
     });
 
     if (!draftText) {
-      setLoading(true, "กำลังอ่านตัวหนังสือจากรูป (OCR)...");
+      setLoading(true, "กำลังอ่านชื่อเมนูจากรูป (OCR)...");
       const rawText = await runOCR(file);
-      const items = buildItemsFromText(rawText);
+      const menuText = cleanMenuText(rawText);
+      const items = buildItemsFromText(menuText);
       await updateDoc(orderRef, {
-        rawText: rawText || "OCR อ่านข้อความไม่ชัด กรุณาแก้ไขด้วยมือ",
-        readingText: rawText || "",
+        rawText: menuText || "OCR อ่านชื่อเมนูไม่ชัด กรุณาเพิ่มรายการด้วยมือ",
+        readingText: menuText || "",
         items,
-        ocrStatus: rawText ? "done" : "error",
+        ocrStatus: menuText ? "done" : "error",
         updatedAt: serverTimestamp(),
       });
     }
@@ -272,37 +262,22 @@ function renderOrders() {
     const node = els.orderCardTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.orderId = order.id;
 
-    const bill = order.billNo || "ไม่มีเลขบิล";
-    const table = order.tableNo || "ไม่ระบุโต๊ะ/ห้อง";
-    const title = order.guestName || order.tableNo || order.billNo || "บิลใหม่";
-    const createdText = formatDateTime(order.createdAtMs);
-
-    node.querySelector(".js-bill").textContent = `บิล ${bill}`;
-    node.querySelector(".js-table").textContent = table;
-    node.querySelector(".js-title").textContent = title;
-    node.querySelector(".js-meta").textContent = [
-      order.hostessName ? `Hostess: ${order.hostessName}` : null,
-      `สร้างเมื่อ ${createdText}`,
-    ]
-      .filter(Boolean)
-      .join(" • ");
+    node.querySelector(".js-title").textContent = order.completed ? "ออเดอร์เสร็จแล้ว" : "ออเดอร์ใหม่";
+    node.querySelector(".js-meta").textContent = `เข้าบอร์ด ${formatDateTime(order.createdAtMs)}`;
 
     const statusEl = node.querySelector(".js-status");
-    statusEl.textContent = order.completed ? "บิลเสร็จแล้ว" : "กำลังทำ";
+    statusEl.textContent = order.completed ? "เสร็จแล้ว" : "กำลังทำ";
     statusEl.classList.add(order.completed ? "is-complete" : "is-working");
 
     const imageEl = node.querySelector(".js-image");
     imageEl.src = order.imageUrl || PLACEHOLDER_IMAGE;
 
-    node.querySelector(".js-raw").textContent = order.rawText || "ยังไม่มีข้อความจาก OCR";
-    node.querySelector(".js-reading").value = order.readingText || "";
     node.querySelector(".js-ocr-state").textContent = describeOcrState(order.ocrStatus);
-    node.querySelector(".js-notes").textContent = order.notes || "ไม่มีโน้ตเพิ่มเติม";
 
     const itemsWrap = node.querySelector(".js-items");
     const items = Array.isArray(order.items) ? order.items : [];
     if (!items.length) {
-      itemsWrap.innerHTML = `<div class="muted small">ยังไม่มีรายการอาหาร กรุณาเพิ่มรายการด้วยมือ</div>`;
+      itemsWrap.innerHTML = `<div class="muted small">ยังไม่มีชื่อเมนู กรุณากด + เพิ่ม</div>`;
     } else {
       items.forEach((item) => {
         const row = document.createElement("label");
@@ -332,22 +307,15 @@ function renderOrders() {
 }
 
 function attachCardEvents(card, order) {
-  const saveReadingBtn = card.querySelector(".js-save-reading");
-  const saveItemsBtn = card.querySelector(".js-save-items");
   const addItemBtn = card.querySelector(".js-add-item");
   const completeBtn = card.querySelector(".js-mark-complete");
   const dragBtn = card.querySelector(".js-drag-delete");
   const itemsWrap = card.querySelector(".js-items");
 
-  saveReadingBtn.addEventListener("click", async () => {
-    const readingText = card.querySelector(".js-reading").value.trim();
-    await updateOrder(order.id, { readingText, updatedAt: serverTimestamp() });
-  });
-
-  saveItemsBtn.addEventListener("click", async () => {
+  const syncItemsDebounced = debounce(async () => {
     const items = collectItemsFromCard(card);
     await syncItems(order.id, items);
-  });
+  }, 450);
 
   addItemBtn.addEventListener("click", async () => {
     const itemText = window.prompt("เพิ่มรายการอาหาร", "");
@@ -368,9 +336,28 @@ function attachCardEvents(card, order) {
 
   itemsWrap.addEventListener("change", async (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
-    const items = collectItemsFromCard(card);
-    await syncItems(order.id, items);
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.type === "checkbox") {
+      const items = collectItemsFromCard(card);
+      await syncItems(order.id, items);
+      return;
+    }
+    syncItemsDebounced();
+  });
+
+  itemsWrap.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || target.type !== "text") return;
+    syncItemsDebounced();
+  });
+
+  itemsWrap.addEventListener("keydown", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || target.type !== "text") return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      target.blur();
+    }
   });
 
   dragBtn.addEventListener("pointerdown", (event) => startDragDelete(event, order.id, card));
@@ -395,6 +382,8 @@ async function syncItems(orderId, items) {
   const completed = items.length > 0 && items.every((item) => item.done);
   await updateOrder(orderId, {
     items,
+    readingText: items.map((item) => item.text).join("\n"),
+    rawText: items.map((item) => item.text).join("\n"),
     completed,
     updatedAt: serverTimestamp(),
   });
@@ -409,7 +398,6 @@ async function updateOrder(orderId, patch) {
     setFormStatus(`อัปเดตบิลไม่สำเร็จ: ${error.message}`, "error");
   }
 }
-
 
 function updateStats() {
   const visibleOrders = getVisibleOrders();
@@ -566,21 +554,20 @@ function getTimerState(order, elapsedMs) {
 function buildItemsFromText(text) {
   const lines = String(text || "")
     .split(/\r?\n/)
-    .map((line) => line.replace(/[•●▪▶]/g, " ").replace(/\s+/g, " ").trim())
+    .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean)
-    .filter((line) => line.length > 1)
-    .filter((line) => !/^table\b|^bill\b|^guest\b|^room\b|^check\b|^total\b|^time\b|^date\b/i.test(line))
     .slice(0, 30);
 
   return lines.map((textLine) => ({ id: uid(), text: textLine, done: false }));
 }
 
 async function runOCR(file) {
-  const result = await window.Tesseract.recognize(file, "tha+eng", {
+  const ocrBlob = await buildMenuCropBlob(file);
+  const result = await window.Tesseract.recognize(ocrBlob, "eng+tha", {
     logger: (message) => {
       if (message.status === "recognizing text") {
         const pct = Math.round((message.progress || 0) * 100);
-        setLoading(true, `กำลังอ่านตัวหนังสือจากรูป ${pct}%`);
+        setLoading(true, `กำลังอ่านชื่อเมนูจากรูป ${pct}%`);
       }
     },
   });
@@ -588,12 +575,36 @@ async function runOCR(file) {
   return (result?.data?.text || "").trim();
 }
 
+async function buildMenuCropBlob(file) {
+  try {
+    if (!("createImageBitmap" in window)) return file;
+    const bitmap = await createImageBitmap(file);
+    const cropX = Math.round(bitmap.width * MENU_CROP.x);
+    const cropY = Math.round(bitmap.height * MENU_CROP.y);
+    const cropWidth = Math.round(bitmap.width * MENU_CROP.width);
+    const cropHeight = Math.round(bitmap.height * MENU_CROP.height);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = cropWidth;
+    canvas.height = cropHeight;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    ctx.drawImage(bitmap, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
+    return await new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", 0.95);
+    });
+  } catch (error) {
+    console.warn("OCR crop skipped", error);
+    return file;
+  }
+}
+
 async function optimizeImage(file) {
   try {
     if (!("createImageBitmap" in window)) return file;
 
     const bitmap = await createImageBitmap(file);
-    const maxSide = 1600;
+    const maxSide = 1800;
     const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * ratio));
     const height = Math.max(1, Math.round(bitmap.height * ratio));
@@ -608,13 +619,98 @@ async function optimizeImage(file) {
       canvas.toBlob(
         (blob) => resolve(blob || file),
         "image/jpeg",
-        0.84
+        0.88
       );
     });
   } catch (error) {
     console.warn("Image optimization skipped", error);
     return file;
   }
+}
+
+function cleanMenuText(text) {
+  const sourceLines = String(text || "")
+    .split(/\r?\n/)
+    .map(normalizeOcrLine)
+    .filter(Boolean);
+
+  const strictLines = sourceLines
+    .map(extractStrictMenuLine)
+    .filter(Boolean);
+
+  const finalLines = strictLines.length
+    ? strictLines
+    : sourceLines.map(extractRelaxedMenuLine).filter(Boolean);
+
+  return dedupeLines(finalLines).slice(0, 30).join("\n");
+}
+
+function normalizeOcrLine(line) {
+  return String(line || "")
+    .replace(/[•●▪▶]/g, " ")
+    .replace(/[|]/g, "1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractStrictMenuLine(line) {
+  if (!line || MENU_LINE_BLOCKLIST.test(line)) return "";
+
+  const patterns = [
+    /^\d+\s+(.+?)\s+\d+(?:[.,]\d{1,2})?$/,
+    /^\d+\s+(.+?)$/,
+    /^(.+?)\s+\d+(?:[.,]\d{1,2})?$/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = line.match(pattern);
+    if (!match) continue;
+    const cleaned = cleanupMenuName(match[1] || "");
+    if (cleaned) return cleaned;
+  }
+
+  return "";
+}
+
+function extractRelaxedMenuLine(line) {
+  if (!line || MENU_LINE_BLOCKLIST.test(line)) return "";
+  const cleaned = cleanupMenuName(
+    line
+      .replace(/^\d+\s+/, "")
+      .replace(/\s+\d+(?:[.,]\d{1,2})?$/, "")
+  );
+
+  if (!cleaned) return "";
+  if (!/[A-Za-zก-๙]/.test(cleaned)) return "";
+  if (/^\d+$/.test(cleaned)) return "";
+  return cleaned;
+}
+
+function cleanupMenuName(value) {
+  const cleaned = String(value || "")
+    .replace(/^[^A-Za-zก-๙]+/, "")
+    .replace(/[^A-Za-zก-๙()&+/' -]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return "";
+  if (MENU_LINE_BLOCKLIST.test(cleaned)) return "";
+  if (cleaned.length < 2) return "";
+  return cleaned;
+}
+
+function dedupeLines(lines) {
+  const seen = new Set();
+  const result = [];
+
+  for (const line of lines) {
+    const key = line.toLowerCase();
+    if (!line || seen.has(key)) continue;
+    seen.add(key);
+    result.push(line);
+  }
+
+  return result;
 }
 
 function saveConfigFromDialog() {
@@ -724,15 +820,15 @@ function formatDateTime(timestampMs) {
 function describeOcrState(stateText) {
   switch (stateText) {
     case "manual":
-      return "ใส่ข้อความด้วยมือ";
+      return "ใส่ข้อความเอง";
     case "queued":
       return "รอ OCR";
     case "processing":
-      return "กำลังอ่านภาพ";
+      return "กำลังอ่านรูป";
     case "done":
-      return "OCR เสร็จแล้ว";
+      return "อ่านเมนูแล้ว";
     case "error":
-      return "OCR ไม่ชัด";
+      return "อ่านไม่ชัด";
     default:
       return "พร้อมใช้งาน";
   }
@@ -758,6 +854,14 @@ function loadBoolean(key, fallback = false) {
   const raw = localStorage.getItem(key);
   if (raw === null) return fallback;
   return raw === "true";
+}
+
+function debounce(fn, wait = 300) {
+  let timer = 0;
+  return (...args) => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => fn(...args), wait);
+  };
 }
 
 async function registerServiceWorker() {
