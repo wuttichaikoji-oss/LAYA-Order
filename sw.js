@@ -1,101 +1,66 @@
-# Laya Kitchen Order Tracker
+const CACHE_NAME = 'laya-order-tracker-v5';
+const APP_SHELL = [
+  './',
+  './index.html',
+  './hostess.html',
+  './kitchen.html',
+  './dashboard.html',
+  './styles.css',
+  './app.js',
+  './firebase-config.js',
+  './manifest.webmanifest',
+  './assets/icon-192.png',
+  './assets/icon-512.png'
+];
 
-เว็บแอพสำหรับติดตามออเดอร์อาหารแบบเรียลไทม์ ใช้งานได้บน GitHub Pages + Firebase โดยไม่ต้องมีเซิร์ฟเวอร์เพิ่ม
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  self.skipWaiting();
+});
 
-## เวอร์ชันนี้มีอะไรใหม่
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+    )
+  );
+  self.clients.claim();
+});
 
-- แยกหน้าใช้งานเป็น 3 หน้า
-  - `hostess.html` สำหรับรับออเดอร์
-  - `kitchen.html` สำหรับจอครัว
-  - `dashboard.html` สำหรับหน้าแบบรวม
-- `index.html` เป็นหน้าเลือกโหมดใช้งาน
-- ฝั่งครัวคลิกรูปบนการ์ดเพื่อขยายเต็มจอได้
-- ค่า Firebase ถูกใส่ไว้แล้ว และตั้ง Firestore database เป็น `laya` เรียบร้อย
-- กดส่งออเดอร์แล้วไม่ต้องรอ OCR จบ ระบบจะส่งเข้าบอร์ดก่อน แล้วค่อยประมวลผลต่อด้านหลัง
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
 
-## สิ่งที่ทำได้
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
 
-- Hostess อัปโหลดรูปออเดอร์จากมือถือ / iPad / คอม
-- บิลใหม่ขึ้นบนบอร์ดครัวทันทีแบบ Realtime
-- OCR อ่านเฉพาะโซนเมนูจากรูปด้วย Tesseract.js
-- ตัดหัวบิลออก แล้วสร้างรายการอาหารจากชื่อเมนูอัตโนมัติ
-- ครัวติ๊กว่าเมนูไหนทำเสร็จแล้วได้ทันที
-- สีกรอบตามเวลา
-  - 0–15 นาที = สีเขียว
-  - >15 นาที = สีเหลือง
-  - >25 นาที = สีแดง
-  - >30 นาที = สีแดงกระพริบ + เสียงพูดเตือน 3 รอบ ทุก 5 นาที
-- เมื่อทั้งบิลเสร็จแล้ว จะลากบิลลงถังขยะเพื่อลบบิลออกจากบอร์ดได้
-- รองรับ PWA ติดเป็นไอคอนบนมือถือได้
+  const isNetworkFirst =
+    event.request.mode === 'navigate' ||
+    /\.(html|js|css|webmanifest)$/i.test(url.pathname) ||
+    url.pathname.endsWith('/firebase-config.js');
 
-## โครงสร้างไฟล์หลัก
+  if (isNetworkFirst) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match('./index.html')))
+    );
+    return;
+  }
 
-- `index.html` หน้าเลือกโหมดใช้งาน
-- `hostess.html` หน้ารับออเดอร์
-- `kitchen.html` หน้าจอครัว
-- `dashboard.html` หน้าแบบรวม
-- `styles.css` รูปแบบหน้าจอ
-- `app.js` ระบบหลักทั้งหมด
-- `firebase-config.js` ไฟล์ config Firebase ที่ตั้งไว้แล้ว
-- `firebase/firestore.rules` กฎ Firestore
-- `firebase/storage.rules` กฎ Storage
-
-## วิธีอัปขึ้น GitHub Pages
-
-1. สร้าง repository ใหม่บน GitHub หรือใช้ repo เดิม
-2. อัปโหลดไฟล์ทั้งหมดในโฟลเดอร์นี้ขึ้น repository
-3. ไปที่ `Settings > Pages`
-4. เลือก `Deploy from a branch`
-5. เลือก branch = `main` และ folder = `/root`
-6. Save
-
-เมื่อ deploy เสร็จ ให้เข้าเว็บที่ GitHub Pages สร้างให้ แล้วเลือกหน้าใช้งานจาก `index.html`
-
-## วิธีใช้งานจริง
-
-### ฝั่ง Hostess
-1. เปิด `hostess.html`
-2. ถ่ายรูปบิลหรือเลือกรูป
-3. ถ้าต้องการ สามารถพิมพ์ชื่อเมนูเองก่อนส่งได้
-4. กด `อัปโหลดและส่งเข้าบอร์ดครัว`
-
-### ฝั่งครัว
-1. เปิด `kitchen.html`
-2. ดูออเดอร์ใหม่แบบเรียลไทม์
-3. ติ๊กเมนูที่ทำเสร็จแล้ว
-4. คลิกรูปเพื่อขยายดูเต็มจอได้
-5. ลากบิลที่เสร็จแล้วไปไว้ที่ถังขยะเพื่อลบออกจากบอร์ด
-
-### หน้าแบบรวม
-- เปิด `dashboard.html` ถ้าต้องการใช้งานทุกอย่างในหน้าเดียว
-
-## Firebase ที่ตั้งค่าไว้แล้ว
-
-ไฟล์ `firebase-config.js` ถูกใส่ค่าไว้แล้วสำหรับโปรเจกต์นี้
-
-- Project ID: `laya-order`
-- Firestore Database ID: `laya`
-
-ดังนั้นเปิดจากเครื่องอื่นได้เลย โดยปกติไม่ต้องกรอก `Firebase Setup` ใหม่
-
-> ถ้าเครื่องไหนเคยบันทึกค่าเก่าในเบราว์เซอร์ไว้ ให้กด `Firebase Setup` แล้วกด `ล้างค่าที่บันทึกไว้` จากนั้นรีเฟรชหน้าเว็บ 1 ครั้ง
-
-## หมายเหตุสำคัญ
-
-### เรื่องเสียงเตือน
-เสียงเตือนใช้ Web Speech API ของเบราว์เซอร์ ดังนั้นครั้งแรกควรกดปุ่ม `เปิดเสียงแจ้งเตือน` ก่อน เพื่อให้เบราว์เซอร์อนุญาตเสียง
-
-### เรื่อง OCR
-OCR อ่านได้ดีที่สุดเมื่อ:
-- รูปสว่าง
-- ตัวหนังสือคม
-- ไม่เอียงมาก
-- โฟกัสเฉพาะโซนเมนู
-
-### เรื่องสิทธิ์ Firebase
-ถ้ายังขึ้นเรื่องสิทธิ์ ให้ตรวจว่าได้ Publish ไฟล์ rules ในโฟลเดอร์ `firebase` ขึ้น Firestore และ Storage แล้ว
-
-
-## หมายเหตุสำหรับเครื่องครัวที่เคยเปิดเวอร์ชันเก่า
-
-หลังอัปไฟล์ชุดใหม่ ให้เปิด `kitchen.html` หรือ `dashboard.html` แล้วกด `Ctrl + F5` 1 ครั้ง เพื่อให้ service worker ดึงไฟล์ล่าสุดและค่า Firebase ล่าสุดจาก GitHub Pages
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(event.request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match('./index.html'));
+    })
+  );
+});

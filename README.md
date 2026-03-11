@@ -1,159 +1,101 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Laya Kitchen Display</title>
-  <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="กระดานครัวเรียลไทม์สำหรับ Laya Kitchen Order Tracker" />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" href="assets/icon-192.png" />
-  <link rel="stylesheet" href="styles.css" />
-  <script src="firebase-config.js"></script>
-</head>
-<body data-page="kitchen">
-  <div class="app-shell wide-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Kitchen Display</p>
-        <h1>Laya Kitchen Order Tracker</h1>
-        <p class="subtext">การ์ดออเดอร์กะทัดรัดสำหรับครัว คลิกรูปเพื่อขยายเต็มจอได้ และหน้า Kitchen เปลี่ยนได้เฉพาะสถานะเท่านั้น</p>
-      </div>
-      <div class="topbar-actions topbar-nav">
-        <a class="ghost-btn nav-link" href="hostess.html">Hostess</a>
-        <a class="ghost-btn nav-link active" href="kitchen.html">Kitchen</a>
-        <a class="ghost-btn nav-link" href="dashboard.html">All-in-one</a>
-        <button id="voiceToggleBtn" class="ghost-btn" type="button">🔔 เปิดเสียงแจ้งเตือน</button>
-        <button id="testVoiceBtn" class="ghost-btn" type="button">ทดสอบเสียง</button>
-        <button id="openSetupBtn" class="ghost-btn" type="button">Firebase Setup</button>
-      </div>
-    </header>
+# Laya Kitchen Order Tracker
 
-    <section id="setupNotice" class="notice hidden"></section>
+เว็บแอพสำหรับติดตามออเดอร์อาหารแบบเรียลไทม์ ใช้งานได้บน GitHub Pages + Firebase โดยไม่ต้องมีเซิร์ฟเวอร์เพิ่ม
 
-    <main class="single-layout">
-      <section class="panel board-panel board-panel--solo">
-        <div class="panel-head wrap">
-          <div>
-            <h2>กระดานออเดอร์สด</h2>
-            <p class="muted">คลิกรูปที่การ์ดเพื่อขยายเต็มจอ การ์ดเล็กลงเพื่อให้เห็นหลายบิลพร้อมกัน</p>
-          </div>
-          <div class="board-stats">
-            <div class="stat-card">
-              <span>Active</span>
-              <strong id="activeCount">0</strong>
-            </div>
-            <div class="stat-card">
-              <span>Over 30m</span>
-              <strong id="overdueCount">0</strong>
-            </div>
-            <div class="stat-card">
-              <span>Completed</span>
-              <strong id="completedCount">0</strong>
-            </div>
-          </div>
-        </div>
+## เวอร์ชันนี้มีอะไรใหม่
 
-        <div class="legend">
-          <span class="legend-pill green">0–15 นาที</span>
-          <span class="legend-pill yellow">15–25 นาที</span>
-          <span class="legend-pill red">25–30 นาที</span>
-          <span class="legend-pill blinking">30+ นาที</span>
-        </div>
+- แยกหน้าใช้งานเป็น 3 หน้า
+  - `hostess.html` สำหรับรับออเดอร์
+  - `kitchen.html` สำหรับจอครัว
+  - `dashboard.html` สำหรับหน้าแบบรวม
+- `index.html` เป็นหน้าเลือกโหมดใช้งาน
+- ฝั่งครัวคลิกรูปบนการ์ดเพื่อขยายเต็มจอได้
+- ค่า Firebase ถูกใส่ไว้แล้ว และตั้ง Firestore database เป็น `laya` เรียบร้อย
+- กดส่งออเดอร์แล้วไม่ต้องรอ OCR จบ ระบบจะส่งเข้าบอร์ดก่อน แล้วค่อยประมวลผลต่อด้านหลัง
 
-        <div id="ordersBoard" class="orders-board empty-state"></div>
-      </section>
-    </main>
-  </div>
+## สิ่งที่ทำได้
 
-  <div id="trashZone" class="trash-zone" aria-label="ลากบิลที่เสร็จแล้วมาทิ้งที่นี่">
-    <div class="trash-inner">
-      <span class="trash-icon">🗑️</span>
-      <strong>ถังขยะ</strong>
-      <small>ลากบิลที่เสร็จแล้วมาลบ</small>
-    </div>
-  </div>
+- Hostess อัปโหลดรูปออเดอร์จากมือถือ / iPad / คอม
+- บิลใหม่ขึ้นบนบอร์ดครัวทันทีแบบ Realtime
+- OCR อ่านเฉพาะโซนเมนูจากรูปด้วย Tesseract.js
+- ตัดหัวบิลออก แล้วสร้างรายการอาหารจากชื่อเมนูอัตโนมัติ
+- ครัวติ๊กว่าเมนูไหนทำเสร็จแล้วได้ทันที
+- สีกรอบตามเวลา
+  - 0–15 นาที = สีเขียว
+  - >15 นาที = สีเหลือง
+  - >25 นาที = สีแดง
+  - >30 นาที = สีแดงกระพริบ + เสียงพูดเตือน 3 รอบ ทุก 5 นาที
+- เมื่อทั้งบิลเสร็จแล้ว จะลากบิลลงถังขยะเพื่อลบบิลออกจากบอร์ดได้
+- รองรับ PWA ติดเป็นไอคอนบนมือถือได้
 
-  <dialog id="setupDialog" class="setup-dialog">
-    <form method="dialog" class="setup-card">
-      <div class="dialog-head">
-        <h3>Firebase Setup</h3>
-        <button class="icon-btn" value="cancel">✕</button>
-      </div>
-      <p class="muted">วางค่า Firebase Web App Config ของคุณ แล้วกดบันทึกลงเครื่องนี้ได้ทันที</p>
+## โครงสร้างไฟล์หลัก
 
-      <div class="field-grid two-col">
-        <label><span>apiKey</span><input id="cfgApiKey" type="text" /></label>
-        <label><span>authDomain</span><input id="cfgAuthDomain" type="text" /></label>
-        <label><span>projectId</span><input id="cfgProjectId" type="text" /></label>
-        <label><span>storageBucket</span><input id="cfgStorageBucket" type="text" /></label>
-        <label><span>messagingSenderId</span><input id="cfgMessagingSenderId" type="text" /></label>
-        <label><span>appId</span><input id="cfgAppId" type="text" /></label>
-      </div>
+- `index.html` หน้าเลือกโหมดใช้งาน
+- `hostess.html` หน้ารับออเดอร์
+- `kitchen.html` หน้าจอครัว
+- `dashboard.html` หน้าแบบรวม
+- `styles.css` รูปแบบหน้าจอ
+- `app.js` ระบบหลักทั้งหมด
+- `firebase-config.js` ไฟล์ config Firebase ที่ตั้งไว้แล้ว
+- `firebase/firestore.rules` กฎ Firestore
+- `firebase/storage.rules` กฎ Storage
 
-      <div class="dialog-actions">
-        <button id="saveConfigBtn" class="primary-btn" type="button">บันทึกค่า Firebase</button>
-        <button id="clearConfigBtn" class="ghost-btn" type="button">ล้างค่าที่บันทึกไว้</button>
-      </div>
-      <p class="muted small">หลังบันทึกแล้ว รีเฟรชหน้าเว็บ 1 ครั้งเพื่อเริ่มเชื่อม Firebase</p>
-    </form>
-  </dialog>
+## วิธีอัปขึ้น GitHub Pages
 
-  <dialog id="imageDialog" class="image-dialog">
-    <div class="image-dialog__card">
-      <div class="dialog-head">
-        <div>
-          <h3>ขยายรูปออเดอร์</h3>
-          <p id="imageDialogCaption" class="muted small"></p>
-        </div>
-        <button id="closeImageDialogBtn" class="icon-btn" type="button">✕</button>
-      </div>
-      <div class="image-dialog__body">
-        <img id="imageDialogImg" alt="รูปออเดอร์ขยาย" />
-      </div>
-    </div>
-  </dialog>
+1. สร้าง repository ใหม่บน GitHub หรือใช้ repo เดิม
+2. อัปโหลดไฟล์ทั้งหมดในโฟลเดอร์นี้ขึ้น repository
+3. ไปที่ `Settings > Pages`
+4. เลือก `Deploy from a branch`
+5. เลือก branch = `main` และ folder = `/root`
+6. Save
 
-  <template id="orderCardTemplate">
-    <article class="order-card compact-card">
-      <div class="order-top compact-top">
-        <div>
-          <h3 class="order-title js-title"></h3>
-          <p class="meta-line js-meta"></p>
-        </div>
-        <div class="timer-wrap compact-timer">
-          <span class="timer-label">เวลาค้าง</span>
-          <strong class="timer-value js-elapsed"></strong>
-          <span class="status-pill js-status"></span>
-        </div>
-      </div>
+เมื่อ deploy เสร็จ ให้เข้าเว็บที่ GitHub Pages สร้างให้ แล้วเลือกหน้าใช้งานจาก `index.html`
 
-      <div class="compact-summary">
-        <button type="button" class="image-panel compact-image-panel js-image-open" title="คลิกเพื่อขยายรูปเต็มจอ">
-          <img class="js-image" alt="รูปออเดอร์" />
-          <span class="image-zoom-chip">ขยาย</span>
-        </button>
-        <div class="compact-summary-main">
-          <div class="detail-head compact-detail-head">
-            <strong>เมนู</strong>
-            <div class="item-actions compact-actions-top">
-              <span class="small muted js-ocr-state"></span>
-              <button type="button" class="mini-btn js-add-item">+ เพิ่ม</button>
-            </div>
-          </div>
-          <div class="items-list js-items"></div>
-        </div>
-      </div>
+## วิธีใช้งานจริง
 
-      <div class="order-bottom compact-bottom">
-        <div class="bottom-actions compact-actions-bottom">
-          <button type="button" class="ghost-btn js-mark-complete">ทำบิลนี้เสร็จแล้ว</button>
-          <button type="button" class="drag-btn js-drag-delete" hidden>ลากไปถังขยะ</button>
-        </div>
-      </div>
-    </article>
-  </template>
+### ฝั่ง Hostess
+1. เปิด `hostess.html`
+2. ถ่ายรูปบิลหรือเลือกรูป
+3. ถ้าต้องการ สามารถพิมพ์ชื่อเมนูเองก่อนส่งได้
+4. กด `อัปโหลดและส่งเข้าบอร์ดครัว`
 
-  <script type="module" src="app.js"></script>
-</body>
-</html>
+### ฝั่งครัว
+1. เปิด `kitchen.html`
+2. ดูออเดอร์ใหม่แบบเรียลไทม์
+3. ติ๊กเมนูที่ทำเสร็จแล้ว
+4. คลิกรูปเพื่อขยายดูเต็มจอได้
+5. ลากบิลที่เสร็จแล้วไปไว้ที่ถังขยะเพื่อลบออกจากบอร์ด
+
+### หน้าแบบรวม
+- เปิด `dashboard.html` ถ้าต้องการใช้งานทุกอย่างในหน้าเดียว
+
+## Firebase ที่ตั้งค่าไว้แล้ว
+
+ไฟล์ `firebase-config.js` ถูกใส่ค่าไว้แล้วสำหรับโปรเจกต์นี้
+
+- Project ID: `laya-order`
+- Firestore Database ID: `laya`
+
+ดังนั้นเปิดจากเครื่องอื่นได้เลย โดยปกติไม่ต้องกรอก `Firebase Setup` ใหม่
+
+> ถ้าเครื่องไหนเคยบันทึกค่าเก่าในเบราว์เซอร์ไว้ ให้กด `Firebase Setup` แล้วกด `ล้างค่าที่บันทึกไว้` จากนั้นรีเฟรชหน้าเว็บ 1 ครั้ง
+
+## หมายเหตุสำคัญ
+
+### เรื่องเสียงเตือน
+เสียงเตือนใช้ Web Speech API ของเบราว์เซอร์ ดังนั้นครั้งแรกควรกดปุ่ม `เปิดเสียงแจ้งเตือน` ก่อน เพื่อให้เบราว์เซอร์อนุญาตเสียง
+
+### เรื่อง OCR
+OCR อ่านได้ดีที่สุดเมื่อ:
+- รูปสว่าง
+- ตัวหนังสือคม
+- ไม่เอียงมาก
+- โฟกัสเฉพาะโซนเมนู
+
+### เรื่องสิทธิ์ Firebase
+ถ้ายังขึ้นเรื่องสิทธิ์ ให้ตรวจว่าได้ Publish ไฟล์ rules ในโฟลเดอร์ `firebase` ขึ้น Firestore และ Storage แล้ว
+
+
+## หมายเหตุสำหรับเครื่องครัวที่เคยเปิดเวอร์ชันเก่า
+
+หลังอัปไฟล์ชุดใหม่ ให้เปิด `kitchen.html` หรือ `dashboard.html` แล้วกด `Ctrl + F5` 1 ครั้ง เพื่อให้ service worker ดึงไฟล์ล่าสุดและค่า Firebase ล่าสุดจาก GitHub Pages
