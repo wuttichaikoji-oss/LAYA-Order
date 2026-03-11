@@ -1,33 +1,29 @@
-# Food Order Tracker OCR
+# LAYA Order - GitHub Pages Ready
 
-เว็บแอพสำหรับติดตามออเดอร์อาหารจากรูปบิล/ใบสั่งอาหาร
-เหมาะสำหรับให้ Hostess ถ่ายรูปออเดอร์ แล้วส่งขึ้นหน้าจอครัวแบบเรียลไทม์
+โปรเจกต์นี้เป็นเวอร์ชันพร้อมอัปขึ้น GitHub และให้ GitHub Pages build/deploy ให้อัตโนมัติ
 
-## ฟังก์ชันหลัก
-- อัปโหลดรูปออเดอร์
-- OCR แปลงข้อความจากรูป
-- สร้างคำเขียน + คำอ่าน
-- เปลี่ยนสีตามเวลา
-  - 0–15 นาที = สีเขียว
-  - เกิน 15 นาที = สีเหลือง
-  - เกิน 25 นาที = สีแดง
-  - เกิน 30 นาที = สีแดงกระพริบ
-- เสียงเตือน “ออเดอร์ยังไม่เสร็จนะคะเชฟ” 3 รอบ ทุก 5 นาที
-- เช็กเสร็จทีละรายการ หรือเสร็จทั้งบิล
-- ลากบิลที่เสร็จแล้วลงถังขยะเพื่อลบ
-- รองรับ local demo ก่อนเชื่อม Firebase
+## สิ่งที่มีให้แล้ว
+- React + Vite
+- ตั้งค่า `base` สำหรับ repo ชื่อ `LAYA-Order`
+- GitHub Actions สำหรับ build และ deploy ไปที่ GitHub Pages
+- ใช้งานแบบ local demo ได้ก่อน แม้ยังไม่ใส่ Firebase
 
-## วิธีเริ่มใช้งาน
+## ก่อนใช้งาน GitHub Pages
+1. อัปไฟล์ทั้งหมดขึ้น repo ชื่อ `LAYA-Order`
+2. ไปที่ `Settings > Pages`
+3. ที่ `Build and deployment > Source` เลือก `GitHub Actions`
+4. push โค้ดขึ้น branch `main`
+5. รอ workflow ในแท็บ `Actions` ทำงานเสร็จ
+
+## รันในเครื่อง
 ```bash
 npm install
 npm run dev
 ```
 
-## การเชื่อม Firebase ภายหลัง
-เปิดไฟล์ `src/firebaseConfig.js` แล้วใส่ค่า config ของ Firebase
+## เชื่อม Firebase ภายหลัง
+แก้ไฟล์ `src/firebaseConfig.js`
 
-ถ้ายังไม่ใส่ค่า ระบบจะทำงานเป็น local demo ในเครื่อง
-
-## สิ่งที่ต้องเปิดใน Firebase เมื่อจะใช้งานจริง
-- Firestore Database
-- Storage
+## หมายเหตุ
+- ถ้าเปลี่ยนชื่อ repo ต้องแก้ `base` ใน `vite.config.js` ให้ตรงชื่อใหม่
+- OCR จะอ่านได้ดีเมื่อรูปคมและแสงชัด
