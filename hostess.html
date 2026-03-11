@@ -4,37 +4,35 @@
   <!-- Build: defaultdb-no-sw-v3-daily-records -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Laya Kitchen Order Tracker</title>
+  <title>Laya Hostess Order Upload</title>
   <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="ติดตามออเดอร์อาหารแบบเรียลไทม์ พร้อม OCR, Firebase และแจ้งเตือนครัว" />
+  <meta name="description" content="หน้ารับออเดอร์สำหรับ Hostess พร้อม OCR และ Firebase" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="assets/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="firebase-config.js"></script>
 </head>
-<body data-page="dashboard">
-  <div class="app-shell">
+<body data-page="hostess">
+  <div class="app-shell narrow-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">Realtime Kitchen Board</p>
+        <p class="eyebrow">Hostess Order Upload</p>
         <h1>Laya Kitchen Order Tracker</h1>
-        <p class="subtext">อัปโหลดรูปบิล → OCR อ่านเฉพาะโซนเมนู → ครัวติ๊กเมนูที่เสร็จแล้วได้ทันที</p>
+        <p class="subtext">ถ่ายรูปแล้วส่งเข้าบอร์ดครัวทันที ระบบจะอ่านชื่อเมนูด้านหลังโดยไม่บล็อกออเดอร์ถัดไป และหน้า Hostess ใช้เพิ่มออเดอร์อย่างเดียว</p>
       </div>
       <div class="topbar-actions topbar-nav">
-        <a class="ghost-btn nav-link" href="hostess.html">Hostess</a>
+        <a class="ghost-btn nav-link active" href="hostess.html">Hostess</a>
         <a class="ghost-btn nav-link" href="kitchen.html">Kitchen</a>
-        <a class="ghost-btn nav-link active" href="dashboard.html">All-in-one</a>
-        <button id="voiceToggleBtn" class="ghost-btn" type="button">🔔 เปิดเสียงแจ้งเตือน</button>
-        <button id="testVoiceBtn" class="ghost-btn" type="button">ทดสอบเสียง</button>
+        <a class="ghost-btn nav-link" href="dashboard.html">All-in-one</a>
         <button id="openSetupBtn" class="ghost-btn" type="button">Firebase Setup</button>
       </div>
     </header>
 
     <section id="setupNotice" class="notice hidden"></section>
 
-    <main class="grid-layout">
-      <section class="panel input-panel">
+    <main class="single-layout">
+      <section class="panel input-panel input-panel--solo">
         <div class="panel-head">
           <h2>สแกนเมนูใหม่</h2>
           <span class="badge">Hostess</span>
@@ -43,7 +41,7 @@
           <label class="upload-box">
             <input id="photoInput" type="file" accept="image/*" capture="environment" />
             <span class="upload-title">แตะเพื่อถ่ายรูปหรือเลือกรูปบิล</span>
-            <span class="upload-sub">ระบบจะโฟกัสอ่านเฉพาะโซนเมนู ไม่อ่านหัวบิล</span>
+            <span class="upload-sub">ระบบจะโฟกัสอ่านเฉพาะโซนเมนูของบิล The Taste และข้ามหัวบิล/ท้ายบิล</span>
           </label>
 
           <div id="photoPreviewWrap" class="photo-preview-wrap hidden">
@@ -59,96 +57,15 @@
             <textarea id="ocrTextDraft" rows="5" placeholder="ถ้าระบบอ่านไม่ตรง พิมพ์ชื่อเมนูเอง เช่น&#10;Baklava&#10;Satay Chicken"></textarea>
           </label>
 
-          <div class="helper-row">
-            <small>ถ้าไม่พิมพ์ ระบบจะอ่านจากรูปให้อัตโนมัติ และแยกเป็นรายการให้ครัวติ๊กได้ทันที</small>
+          <div class="helper-row helper-row--boxed">
+            <small>กดส่งแล้วออเดอร์จะขึ้นบอร์ดก่อนทันที รูปจะอัปตามหลัง และ OCR จะวิ่งเบื้องหลังต่อเอง</small>
           </div>
 
           <button id="submitBtn" class="primary-btn" type="submit">อัปโหลดและส่งเข้าบอร์ดครัว</button>
           <div id="formStatus" class="status-text"></div>
         </form>
       </section>
-
-      <section class="panel board-panel">
-        <div class="panel-head wrap">
-          <div>
-            <h2>กระดานออเดอร์สด</h2>
-            <p class="muted">การ์ดจะเน้นชื่อเมนูให้อ่านเต็มขึ้น และคลิกรูปเพื่อขยายดูได้ทันที</p>
-          </div>
-          <div class="board-stats">
-            <div class="stat-card">
-              <span>Active</span>
-              <strong id="activeCount">0</strong>
-            </div>
-            <div class="stat-card">
-              <span>Over 30m</span>
-              <strong id="overdueCount">0</strong>
-            </div>
-            <div class="stat-card">
-              <span>Completed</span>
-              <strong id="completedCount">0</strong>
-            </div>
-          </div>
-        </div>
-
-        <div class="legend">
-          <span class="legend-pill green">0–15 นาที</span>
-          <span class="legend-pill yellow">15–25 นาที</span>
-          <span class="legend-pill red">25–30 นาที</span>
-          <span class="legend-pill blinking">30+ นาที</span>
-        </div>
-
-        <section class="daily-record-panel">
-          <div class="record-head">
-            <div>
-              <h3>บันทึกผลงานวันนี้</h3>
-              <p id="recordDateLabel" class="muted small">อัปเดตตามวันที่วันนี้</p>
-            </div>
-            <p class="muted small">นับจากเวลาออเดอร์เข้าบอร์ด จนถึงเวลาที่กดเสร็จหรือทำครบทุกเมนู</p>
-          </div>
-          <div class="record-grid">
-            <div class="record-card">
-              <span>ออเดอร์วันนี้</span>
-              <strong id="dailyTotalCount">0</strong>
-            </div>
-            <div class="record-card is-good">
-              <span>เสร็จ ≤ 15 นาที</span>
-              <strong id="dailyWithin15Count">0</strong>
-            </div>
-            <div class="record-card is-warn">
-              <span>15–25 นาที</span>
-              <strong id="daily15to25Count">0</strong>
-            </div>
-            <div class="record-card is-orange">
-              <span>25–30 นาที</span>
-              <strong id="daily25to30Count">0</strong>
-            </div>
-            <div class="record-card is-danger">
-              <span>เกิน 30 นาที</span>
-              <strong id="dailyOver30Count">0</strong>
-            </div>
-            <div class="record-card is-accent">
-              <span>เสร็จสิ้นทั้งหมด</span>
-              <strong id="dailyCompletedCount">0</strong>
-            </div>
-          </div>
-        </section>
-
-        <div id="ordersBoard" class="orders-board empty-state">
-          <div class="empty-card">
-            <h3>ยังไม่มีออเดอร์</h3>
-            <p>เมื่อมีการส่งออเดอร์ใหม่จากฝั่ง Hostess การ์ดจะเด้งขึ้นที่นี่แบบเรียลไทม์</p>
-          </div>
-        </div>
-      </section>
     </main>
-  </div>
-
-  <div id="trashZone" class="trash-zone" aria-label="ลากบิลที่เสร็จแล้วมาทิ้งที่นี่">
-    <div class="trash-inner">
-      <span class="trash-icon">🗑️</span>
-      <strong>ถังขยะ</strong>
-      <small>ลากบิลที่เสร็จแล้วมาลบ</small>
-    </div>
   </div>
 
   <dialog id="setupDialog" class="setup-dialog">
@@ -175,61 +92,6 @@
       <p class="muted small">หลังบันทึกแล้ว รีเฟรชหน้าเว็บ 1 ครั้งเพื่อเริ่มเชื่อม Firebase</p>
     </form>
   </dialog>
-
-  <dialog id="imageDialog" class="image-dialog">
-    <div class="image-dialog__card">
-      <div class="dialog-head">
-        <div>
-          <h3>ขยายรูปออเดอร์</h3>
-          <p id="imageDialogCaption" class="muted small"></p>
-        </div>
-        <button id="closeImageDialogBtn" class="icon-btn" type="button">✕</button>
-      </div>
-      <div class="image-dialog__body">
-        <img id="imageDialogImg" alt="รูปออเดอร์ขยาย" />
-      </div>
-    </div>
-  </dialog>
-
-  <template id="orderCardTemplate">
-    <article class="order-card compact-card">
-      <div class="order-top compact-top">
-        <div>
-          <h3 class="order-title js-title"></h3>
-          <p class="meta-line js-meta"></p>
-        </div>
-        <div class="timer-wrap compact-timer">
-          <span class="timer-label">เวลาค้าง</span>
-          <strong class="timer-value js-elapsed"></strong>
-          <span class="status-pill js-status"></span>
-        </div>
-      </div>
-
-      <div class="compact-summary">
-        <button type="button" class="image-panel compact-image-panel js-image-open" title="คลิกเพื่อขยายรูปเต็มจอ">
-          <img class="js-image" alt="รูปออเดอร์" />
-          <span class="image-zoom-chip">ขยาย</span>
-        </button>
-        <div class="compact-summary-main">
-          <div class="detail-head compact-detail-head">
-            <strong>เมนู</strong>
-            <div class="item-actions compact-actions-top">
-              <span class="small muted js-ocr-state"></span>
-              <button type="button" class="mini-btn js-add-item">+ เพิ่ม</button>
-            </div>
-          </div>
-          <div class="items-list js-items"></div>
-        </div>
-      </div>
-
-      <div class="order-bottom compact-bottom">
-        <div class="bottom-actions compact-actions-bottom">
-          <button type="button" class="ghost-btn js-mark-complete">ทำบิลนี้เสร็จแล้ว</button>
-          <button type="button" class="drag-btn js-drag-delete" hidden>ลากไปถังขยะ</button>
-        </div>
-      </div>
-    </article>
-  </template>
 
   <script type="module" src="app.js"></script>
 </body>
