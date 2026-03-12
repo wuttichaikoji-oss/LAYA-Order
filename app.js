@@ -125,6 +125,7 @@ const state = {
   menuMaster: new Map(),
   aliasMap: new Map(),
   knowledgeLoaded: false,
+  overduePersisting: new Set(),
 };
 
 const hasForm = !!els.orderForm;
@@ -544,6 +545,10 @@ async function handleOrderSubmit(event) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       createdAtMs,
+      completedAtMs: 0,
+      completionDurationMs: 0,
+      exceeded30m: false,
+      exceeded30mAtMs: 0,
       alertPhrase: "ออเดอร์ยังไม่เสร็จนะคะเชฟ",
     };
 
@@ -615,22 +620,25 @@ async function pumpOcrQueue() {
     const ocrBlob = await resolveOcrBlob(job.fileOrBlob, job.preparedMedia);
     const rawText = await runOCR(ocrBlob);
     const menuText = cleanMenuText(rawText);
-    const items = buildItemsFromText(menuText);
+    let items = buildItemsFromText(menuText);
+    if (!items.length) {
+      items = buildItemsFromRawOcr(rawText);
+    }
     const readingText = items.map((item) => item.text).join("\n");
     await updateDoc(doc(state.db, "orders", job.orderId), {
-      rawText: menuText || "OCR อ่านชื่อเมนูไม่ชัด กรุณาเพิ่มรายการด้วยมือ",
+      rawText: menuText || rawText || "รอตรวจชื่อเมนู",
       readingText: readingText || "",
       items,
-      ocrStatus: menuText ? "done" : "error",
+      ocrStatus: items.length ? "done" : "review",
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
     console.error(error);
     await updateDoc(doc(state.db, "orders", job.orderId), {
-      rawText: "OCR อ่านชื่อเมนูไม่สำเร็จ กรุณากด + เพิ่ม หรือแก้ไขชื่อเมนูด้วยมือ",
+      rawText: "รอตรวจชื่อเมนู หรือกด + เพิ่มรายการด้วยมือ",
       readingText: "",
       items: [],
-      ocrStatus: "error",
+      ocrStatus: "review",
       updatedAt: serverTimestamp(),
     });
   } finally {
@@ -743,8 +751,15 @@ function attachCardEvents(card, order) {
   });
 
   completeBtn.addEventListener("click", async () => {
+    const elapsedNow = getElapsedMs(order);
     await updateOrder(order.id, {
       completed: true,
+      completedAtMs: Date.now(),
+      completionDurationMs: elapsedNow,
+      exceeded30m: Boolean(order.exceeded30m) || elapsedNow > 30 * 60 * 1000,
+      exceeded30mAtMs: Boolean(order.exceeded30m)
+        ? Number(order.exceeded30mAtMs || 0)
+        : (elapsedNow > 30 * 60 * 1000 ? Date.now() : 0),
       updatedAt: serverTimestamp(),
     });
   });
@@ -814,11 +829,19 @@ async function syncItems(orderId, items) {
     .filter((item) => item.text);
 
   const completed = normalizedItems.length > 0 && normalizedItems.every((item) => item.done);
+  const orderNow = state.orderMap.get(orderId) || {};
+  const elapsedNow = getElapsedMs(orderNow);
   await updateOrder(orderId, {
     items: normalizedItems,
     readingText: normalizedItems.map((item) => item.text).join("\n"),
     rawText: normalizedItems.map((item) => item.raw || item.text).join("\n"),
     completed,
+    completedAtMs: completed ? Date.now() : Number(orderNow.completedAtMs || 0),
+    completionDurationMs: completed ? elapsedNow : Number(orderNow.completionDurationMs || 0),
+    exceeded30m: Boolean(orderNow.exceeded30m) || elapsedNow > 30 * 60 * 1000,
+    exceeded30mAtMs: Boolean(orderNow.exceeded30m)
+      ? Number(orderNow.exceeded30mAtMs || 0)
+      : (elapsedNow > 30 * 60 * 1000 ? Date.now() : 0),
     updatedAt: serverTimestamp(),
   });
 
@@ -913,10 +936,11 @@ function getFileKey(file) {
 
 function updateStats() {
   if (!els.activeCount || !els.overdueCount || !els.completedCount) return;
+  const allOrders = getActiveAndRecordedOrders();
   const visibleOrders = getVisibleOrders();
-  const activeCount = visibleOrders.filter((order) => !order.completed).length;
-  const overdueCount = visibleOrders.filter((order) => !order.completed && getElapsedMs(order) > 30 * 60 * 1000).length;
-  const completedCount = visibleOrders.filter((order) => order.completed).length;
+  const activeCount = visibleOrders.length;
+  const overdueCount = allOrders.filter((order) => isTodayRecord(getOrderOver30RecordMs(order))).length;
+  const completedCount = allOrders.filter((order) => isTodayRecord(getOrderCompletedRecordMs(order))).length;
   els.activeCount.textContent = String(activeCount);
   els.overdueCount.textContent = String(overdueCount);
   els.completedCount.textContent = String(completedCount);
@@ -925,9 +949,6 @@ function updateStats() {
 function updateTimersAndAlerts() {
   if (!hasBoard) return;
   const visibleOrders = getVisibleOrders();
-  let activeCount = 0;
-  let overdueCount = 0;
-  let completedCount = 0;
 
   for (const order of visibleOrders) {
     const card = els.ordersBoard.querySelector(`[data-order-id="${order.id}"]`);
@@ -942,19 +963,13 @@ function updateTimersAndAlerts() {
     card.classList.add(timerState.className);
     card.dataset.timerState = timerState.className;
 
-    if (order.completed) {
-      completedCount += 1;
-      state.alertMap.delete(order.id);
-    } else {
-      activeCount += 1;
-      if (elapsedMs > 30 * 60 * 1000) overdueCount += 1;
+    if (elapsedMs > 30 * 60 * 1000) {
+      maybePersistOver30Record(order, elapsedMs);
       maybeTriggerAlert(order, elapsedMs);
     }
   }
 
-  if (els.activeCount) els.activeCount.textContent = String(activeCount);
-  if (els.overdueCount) els.overdueCount.textContent = String(overdueCount);
-  if (els.completedCount) els.completedCount.textContent = String(completedCount);
+  updateStats();
 }
 
 function maybeTriggerAlert(order, elapsedMs) {
@@ -1049,11 +1064,60 @@ function isPointerOverTrash(event) {
 
 function getVisibleOrders() {
   return [...state.orders]
-    .filter((order) => !order.softDeleted)
-    .sort((a, b) => {
-      if (!!a.completed !== !!b.completed) return Number(a.completed) - Number(b.completed);
-      return getOrderCreatedAtMs(b) - getOrderCreatedAtMs(a);
-    });
+    .filter((order) => !order.softDeleted && !order.completed)
+    .sort((a, b) => getOrderCreatedAtMs(b) - getOrderCreatedAtMs(a));
+}
+
+function getActiveAndRecordedOrders() {
+  return [...state.orders].filter((order) => !order.softDeleted);
+}
+
+function getTodayRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const end = start + 24 * 60 * 60 * 1000;
+  return { start, end };
+}
+
+function isTodayRecord(timestampMs) {
+  const value = Number(timestampMs || 0);
+  if (!Number.isFinite(value) || value <= 0) return false;
+  const { start, end } = getTodayRange();
+  return value >= start && value < end;
+}
+
+function getOrderCompletedRecordMs(order) {
+  return Number(order?.completedAtMs || 0);
+}
+
+function getOrderOver30RecordMs(order) {
+  if (order?.exceeded30m) {
+    const recorded = Number(order?.exceeded30mAtMs || 0);
+    if (recorded > 0) return recorded;
+    const completedAt = Number(order?.completedAtMs || 0);
+    if (completedAt > 0) return completedAt;
+    return getOrderCreatedAtMs(order);
+  }
+  if (!order?.completed && getElapsedMs(order) > 30 * 60 * 1000) {
+    return Date.now();
+  }
+  return 0;
+}
+
+function maybePersistOver30Record(order, elapsedMs) {
+  if (!state.db || order?.completed || order?.exceeded30m) return;
+  if (elapsedMs <= 30 * 60 * 1000) return;
+  if (state.overduePersisting.has(order.id)) return;
+  state.overduePersisting.add(order.id);
+  updateDoc(doc(state.db, "orders", order.id), {
+    exceeded30m: true,
+    exceeded30mAtMs: Date.now(),
+    updatedAt: serverTimestamp(),
+  }).catch((error) => {
+    console.error(error);
+  }).finally(() => {
+    state.overduePersisting.delete(order.id);
+  });
 }
 
 function getOrderCreatedAtMs(order) {
@@ -1104,6 +1168,36 @@ function buildItemsFromText(text, options = {}) {
   });
 
   return items.filter((item) => item.matchType !== "raw" || filterLikelyMenuLines([item.raw || item.text]).length > 0);
+}
+
+function buildItemsFromRawOcr(text) {
+  const sourceLines = String(text || "")
+    .split(/\r?\n/)
+    .map(normalizeOcrLine)
+    .filter(Boolean);
+
+  const candidateLines = mergeReceiptMenuLines(
+    sourceLines
+      .map((line) => extractStrictMenuLine(line) || extractRelaxedMenuLine(line))
+      .filter(Boolean)
+  );
+
+  const items = [];
+  for (const line of dedupeLines(candidateLines)) {
+    const match = canonicalizeMenuLine(line);
+    if (!match?.name || match.matchType === "raw") continue;
+    if (Number(match.confidence || 0) < 0.62) continue;
+    items.push({
+      id: uid(),
+      text: match.name,
+      done: false,
+      raw: match.raw || line,
+      matchType: match.matchType || "fallback",
+      confidence: Number(match.confidence || 0),
+    });
+  }
+
+  return items;
 }
 
 async function runOCR(fileOrBlob) {
@@ -1464,7 +1558,8 @@ function describeOcrState(stateText) {
     case "done":
       return "เทียบเมนูร้านแล้ว";
     case "error":
-      return "อ่านไม่ชัด";
+    case "review":
+      return "รอตรวจชื่อเมนู";
     default:
       return "พร้อมใช้งาน";
   }

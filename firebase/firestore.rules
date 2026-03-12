@@ -35,9 +35,17 @@ service cloud.firestore {
         'createdAt',
         'updatedAt',
         'createdAtMs',
+        'completedAtMs',
+        'completionDurationMs',
+        'exceeded30m',
+        'exceeded30mAtMs',
         'alertPhrase'
       ])
       && data.createdAtMs is int
+      && data.completedAtMs is int
+      && data.completionDurationMs is int
+      && data.exceeded30m is bool
+      && data.exceeded30mAtMs is int
       && data.completed is bool
       && data.softDeleted is bool
       && data.billNo is string
@@ -69,9 +77,17 @@ service cloud.firestore {
         'createdAt',
         'updatedAt',
         'createdAtMs',
+        'completedAtMs',
+        'completionDurationMs',
+        'exceeded30m',
+        'exceeded30mAtMs',
         'alertPhrase'
       ])
       && data.createdAtMs is int
+      && data.completedAtMs is int
+      && data.completionDurationMs is int
+      && data.exceeded30m is bool
+      && data.exceeded30mAtMs is int
       && data.completed is bool
       && data.softDeleted is bool
       && data.billNo is string
