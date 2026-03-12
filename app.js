@@ -20,8 +20,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const FIRESTORE_DATABASE_ID = String(window.LAYA_FIRESTORE_DATABASE_ID || "").trim();
-const MENU_CROP = { x: 0.03, y: 0.33, width: 0.94, height: 0.44 };
-const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|panadda\b|paraq?ee\b|cover\s*\d+|t\s*:\s*[a-z0-9-]+\b|#?\(?tt\d+\)?)/i;
+const MENU_CROP = { x: 0.03, y: 0.34, width: 0.94, height: 0.42 };
+const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|paraq?ee\b|cover\s*\d+)/i;
 
 
 const MENU_MASTER_SEED = [
@@ -31,7 +31,7 @@ const MENU_MASTER_SEED = [
   { name: "Tom Kha Gai", category: "Soup", aliases: ["Tom Kha Kai"] },
   { name: "Thai Seafood Salad", category: "Salad", aliases: [] },
   { name: "Thai Beef Salad", category: "Salad", aliases: [] },
-  { name: "Clear Soup with Chicken Mince", category: "Soup", aliases: ["Clear Soup Mince Chicken", "Clear Soup Chicken", "Chicken Mince Clear Soup", "Clear Soup with Pork Mince or Chicken Mince", "Clear Soup Mince", "Clear Soup Mince Chicker", "Clear Soup Mince Chicker"] },
+  { name: "Clear Soup with Chicken Mince", category: "Soup", aliases: ["Clear Soup Mince Chicken", "Clear Soup Chicken", "Chicken Mince Clear Soup", "Clear Soup with Pork Mince or Chicken Mince"] },
   { name: "Clear Soup with Pork Mince", category: "Soup", aliases: ["Clear Soup Mince Pork", "Clear Soup Pork", "Pork Mince Clear Soup", "Clear Soup with Pork Mince or Chicken Mince"] },
   { name: "French Onion Soup", category: "Soup", aliases: [] },
   { name: "Satay", category: "Appetizer", aliases: ["Satay Chicken", "Chicken Satay"] },
@@ -51,7 +51,7 @@ const MENU_MASTER_SEED = [
   { name: "Wagyu Beef Burger", category: "Sandwich", aliases: ["Wagyu Burger"] },
   { name: "Club Sandwich", category: "Sandwich", aliases: [] },
   { name: "Fish & Chips", category: "Main", aliases: ["Fish and Chips"] },
-  { name: "Bolognese", category: "Pasta", aliases: ["Bolognese Spaghetti", "Spaghetti Bolognese", "Bolognese Spaghetii", "Bolognese Spaghetti Pasta"] },
+  { name: "Bolognese", category: "Pasta", aliases: ["Bolognese Spaghetti", "Spaghetti Bolognese"] },
   { name: "Pesto", category: "Pasta", aliases: ["Pesto Spaghetti", "Spaghetti Pesto"] },
   { name: "French Fries", category: "Sides", aliases: ["Fries"] },
   { name: "Chicken Nugget", category: "Kids", aliases: ["Chicken Nuggets"] },
@@ -1088,7 +1088,7 @@ function buildItemsFromText(text, options = {}) {
     .filter(Boolean)
     .slice(0, 30);
 
-  const items = lines.map((textLine) => {
+  return lines.map((textLine) => {
     const match = canonicalizeMenuLine(textLine);
     return {
       id: uid(),
@@ -1099,14 +1099,10 @@ function buildItemsFromText(text, options = {}) {
       confidence: Number(match.confidence || 0),
     };
   });
-
-  return items.filter((item) => item.matchType !== "raw" || filterLikelyMenuLines([item.raw || item.text]).length > 0);
 }
 
 async function runOCR(fileOrBlob) {
-  const result = await window.Tesseract.recognize(fileOrBlob, "eng", {
-    tessedit_pageseg_mode: window.Tesseract?.PSM?.SINGLE_BLOCK ?? 6,
-  });
+  const result = await window.Tesseract.recognize(fileOrBlob, "eng");
   return (result?.data?.text || "").trim();
 }
 
@@ -1180,73 +1176,11 @@ function cleanMenuText(text) {
     .map(extractStrictMenuLine)
     .filter(Boolean);
 
-  const relaxedLines = strictLines.length
+  const finalLines = strictLines.length
     ? strictLines
     : sourceLines.map(extractRelaxedMenuLine).filter(Boolean);
 
-  const mergedLines = mergeReceiptMenuLines(relaxedLines);
-  const finalLines = filterLikelyMenuLines(mergedLines);
   return dedupeLines(finalLines).slice(0, 30).join("\n");
-}
-
-function mergeReceiptMenuLines(lines) {
-  const cleaned = lines
-    .map((line) => cleanupMenuName(line))
-    .filter(Boolean);
-
-  const merged = [];
-  for (let i = 0; i < cleaned.length; i += 1) {
-    const current = cleaned[i];
-    const next = cleaned[i + 1] || "";
-    const singleMatch = canonicalizeMenuLine(current);
-
-    if (next) {
-      const mergedCandidate = cleanupMenuName(`${current} ${stripContinuationPrefix(next)}`);
-      const mergedMatch = canonicalizeMenuLine(mergedCandidate);
-      if (shouldPreferMergedLine(current, next, singleMatch, mergedMatch)) {
-        merged.push(mergedCandidate);
-        i += 1;
-        continue;
-      }
-    }
-
-    merged.push(current);
-  }
-
-  return merged;
-}
-
-function stripContinuationPrefix(value) {
-  return String(value || "").replace(/^[-–—:;]+\s*/, "").trim();
-}
-
-function shouldPreferMergedLine(current, next, singleMatch, mergedMatch) {
-  if (!current || !next) return false;
-
-  const currentTokens = normalizeMenuKey(current).split(" ").filter(Boolean);
-  const nextTokens = normalizeMenuKey(next).split(" ").filter(Boolean);
-  const continuationLike = /^[-–—]/.test(next) || nextTokens.length <= 3 || /^[a-z]/.test(stripContinuationPrefix(next));
-  if (!continuationLike) return false;
-
-  if (!mergedMatch?.name || mergedMatch.matchType === "raw") return false;
-  if ((mergedMatch.confidence || 0) >= 0.9 && currentTokens.length <= 5) return true;
-  if ((mergedMatch.confidence || 0) >= (singleMatch?.confidence || 0) + 0.12) return true;
-  return false;
-}
-
-function filterLikelyMenuLines(lines) {
-  return lines.filter((line) => {
-    const match = canonicalizeMenuLine(line);
-    if (match.matchType !== "raw") return true;
-
-    const cleaned = cleanupMenuName(line);
-    const words = cleaned.split(/\s+/).filter(Boolean);
-    const longWords = words.filter((word) => word.length >= 3);
-    const hasMenuLikeShape = words.length >= 2 && longWords.length >= 2;
-    const hasDigits = /\d/.test(cleaned);
-    const weirdCaps = /\b[A-Z]{2,}\b/.test(cleaned) && words.length <= 2;
-    return hasMenuLikeShape && !hasDigits && !weirdCaps;
-  });
 }
 
 function normalizeOcrLine(line) {
