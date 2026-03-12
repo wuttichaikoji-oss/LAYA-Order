@@ -10,6 +10,7 @@ import {
   orderBy,
   serverTimestamp,
   getDocs,
+  setDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
   getStorage,
@@ -21,6 +22,58 @@ import {
 const FIRESTORE_DATABASE_ID = String(window.LAYA_FIRESTORE_DATABASE_ID || "").trim();
 const MENU_CROP = { x: 0.03, y: 0.34, width: 0.94, height: 0.42 };
 const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|paraq?ee\b|cover\s*\d+)/i;
+
+
+const MENU_MASTER_SEED = [
+  { name: "Deep-Fried Spring Rolls", category: "Appetizer", aliases: ["Deep Fried Spring Rolls", "Spring Rolls"] },
+  { name: "Goong Sa-Rong", category: "Appetizer", aliases: ["Goong Sa Rong", "Goong Sarong"] },
+  { name: "Tom Yum Goong", category: "Soup", aliases: ["Tomyum Goong"] },
+  { name: "Tom Kha Gai", category: "Soup", aliases: ["Tom Kha Kai"] },
+  { name: "Thai Seafood Salad", category: "Salad", aliases: [] },
+  { name: "Thai Beef Salad", category: "Salad", aliases: [] },
+  { name: "Clear Soup with Chicken Mince", category: "Soup", aliases: ["Clear Soup Mince Chicken", "Clear Soup Chicken", "Chicken Mince Clear Soup", "Clear Soup with Pork Mince or Chicken Mince"] },
+  { name: "Clear Soup with Pork Mince", category: "Soup", aliases: ["Clear Soup Mince Pork", "Clear Soup Pork", "Pork Mince Clear Soup", "Clear Soup with Pork Mince or Chicken Mince"] },
+  { name: "French Onion Soup", category: "Soup", aliases: [] },
+  { name: "Satay", category: "Appetizer", aliases: ["Satay Chicken", "Chicken Satay"] },
+  { name: "Cream of Tomato Soup", category: "Soup", aliases: ["Tomato Soup"] },
+  { name: "Cream of Mushroom Soup", category: "Soup", aliases: ["Mushroom Soup"] },
+  { name: "Massaman Nue", category: "Main", aliases: ["Massaman Beef"] },
+  { name: "Gang Phed Ped Yang", category: "Main", aliases: ["Red Curry Roasted Duck"] },
+  { name: "Goong Ma-Kham", category: "Main", aliases: ["Goong Ma Kham"] },
+  { name: "Nue Prik Thai Dum", category: "Main", aliases: ["Beef Black Pepper"] },
+  { name: "Seabass on Yellow Curry Sauce", category: "Main", aliases: ["Seabass Yellow Curry"] },
+  { name: "Panang Chicken Curry", category: "Main", aliases: ["Panang Chicken"] },
+  { name: "Gai Phad Med Ma Muang", category: "Main", aliases: ["Chicken Cashew Nut", "Cashew Chicken"] },
+  { name: "Pad Kaprow", category: "Main", aliases: ["Pad Kra Pao", "Kaprow"] },
+  { name: "Gang Kheaw Waan Gai", category: "Main", aliases: ["Green Curry Chicken"] },
+  { name: "Khao Phad", category: "Main", aliases: ["Thai Fried Rice"] },
+  { name: "Phad Preaw Wann Moo", category: "Main", aliases: ["Sweet and Sour Pork"] },
+  { name: "Wagyu Beef Burger", category: "Sandwich", aliases: ["Wagyu Burger"] },
+  { name: "Club Sandwich", category: "Sandwich", aliases: [] },
+  { name: "Fish & Chips", category: "Main", aliases: ["Fish and Chips"] },
+  { name: "Bolognese", category: "Pasta", aliases: ["Bolognese Spaghetti", "Spaghetti Bolognese"] },
+  { name: "Pesto", category: "Pasta", aliases: ["Pesto Spaghetti", "Spaghetti Pesto"] },
+  { name: "French Fries", category: "Sides", aliases: ["Fries"] },
+  { name: "Chicken Nugget", category: "Kids", aliases: ["Chicken Nuggets"] },
+  { name: "Arrabbiata", category: "Pasta", aliases: ["Spaghetti Arrabbiata"] },
+  { name: "Carbonara", category: "Pasta", aliases: ["Spaghetti Carbonara"] },
+  { name: "Spaghetti Kee Mao", category: "Pasta", aliases: ["Kee Mao Spaghetti"] },
+  { name: "Pad Thai Goong", category: "Main", aliases: ["Pad Thai Shrimp"] },
+  { name: "Marinara", category: "Pasta", aliases: ["Spaghetti Marinara"] },
+  { name: "Meatball", category: "Pasta", aliases: ["Spaghetti Meatball", "Meatballs"] },
+  { name: "Tiramisu Cake", category: "Dessert", aliases: ["Tiramisu"] },
+  { name: "Chocolate Brownie", category: "Dessert", aliases: ["Chocolate Brownies", "Brownie"] },
+  { name: "Vanilla Crème Brûlée", category: "Dessert", aliases: ["Vanilla Creme Brulee", "Creme Brulee"] },
+  { name: "Strawberry Panna Cotta", category: "Dessert", aliases: ["Panna Cotta"] },
+  { name: "Passion Fruit Mousse", category: "Dessert", aliases: ["Passionfruit Mousse"] },
+  { name: "Khao Niaow Ma Muang", category: "Dessert", aliases: ["Mango Sticky Rice"] },
+  { name: "Tropical Fruit Plate", category: "Dessert", aliases: ["Fruit Plate"] },
+  { name: "Fish Fingers", category: "Kids", aliases: [] },
+  { name: "Tuna Sandwich", category: "Sandwich", aliases: [] },
+  { name: "Fried Rice", category: "Main", aliases: [] },
+  { name: "Kids Chicken Nuggets", category: "Kids", aliases: ["Kids Chicken Nugget"] },
+  { name: "Napoletana", category: "Pasta", aliases: ["Spaghetti Napoletana"] },
+];
 
 const els = {
   orderForm: document.getElementById("orderForm"),
@@ -69,6 +122,9 @@ const state = {
   pollTimer: 0,
   lastSnapshotAt: 0,
   preparedMedia: null,
+  menuMaster: new Map(),
+  aliasMap: new Map(),
+  knowledgeLoaded: false,
 };
 
 const hasForm = !!els.orderForm;
@@ -165,12 +221,243 @@ function initFirebase(config) {
     state.db = FIRESTORE_DATABASE_ID ? getFirestore(app, FIRESTORE_DATABASE_ID) : getFirestore(app);
     state.storage = getStorage(app);
     els.setupNotice?.classList.add("hidden");
+    primeMenuKnowledge();
     if (hasBoard) initRealtimeOrders();
   } catch (error) {
     console.error(error);
     const hint = FIRESTORE_DATABASE_ID ? ` (Firestore database: ${FIRESTORE_DATABASE_ID})` : "";
     showSetupNotice(`เชื่อม Firebase ไม่สำเร็จ${hint}: ${error.message}`);
   }
+}
+
+
+function primeMenuKnowledge() {
+  seedLocalMenuKnowledge();
+  loadRemoteMenuKnowledge().catch((error) => {
+    console.warn("Menu knowledge load skipped", error);
+  });
+}
+
+function seedLocalMenuKnowledge() {
+  const menuMap = new Map();
+  const aliasMap = new Map();
+
+  for (const entry of MENU_MASTER_SEED) {
+    const menu = {
+      name: String(entry.name || "").trim(),
+      category: String(entry.category || "General").trim(),
+      active: entry.active !== false,
+      aliases: Array.isArray(entry.aliases)
+        ? entry.aliases.map((value) => String(value || "").trim()).filter(Boolean)
+        : [],
+    };
+    if (!menu.name) continue;
+    menuMap.set(normalizeMenuKey(menu.name), menu);
+
+    for (const alias of menu.aliases) {
+      aliasMap.set(normalizeMenuKey(alias), menu.name);
+    }
+    aliasMap.set(normalizeMenuKey(menu.name), menu.name);
+  }
+
+  state.menuMaster = menuMap;
+  state.aliasMap = aliasMap;
+}
+
+async function loadRemoteMenuKnowledge() {
+  if (!state.db) return;
+
+  const menuSnapshot = await getDocs(collection(state.db, "menu_master"));
+  if (menuSnapshot.empty) {
+    await seedRemoteMenuKnowledge();
+  } else {
+    for (const docSnap of menuSnapshot.docs) {
+      mergeMenuEntry(docSnap.data());
+    }
+  }
+
+  const aliasSnapshot = await getDocs(collection(state.db, "ocr_alias"));
+  for (const docSnap of aliasSnapshot.docs) {
+    const data = docSnap.data() || {};
+    const raw = String(data.raw || "").trim();
+    const menuName = String(data.menuName || "").trim();
+    if (raw && menuName) {
+      state.aliasMap.set(normalizeMenuKey(raw), menuName);
+      ensureMenuExists(menuName);
+    }
+  }
+
+  state.knowledgeLoaded = true;
+}
+
+async function seedRemoteMenuKnowledge() {
+  if (!state.db) return;
+  const jobs = MENU_MASTER_SEED.map((entry) => {
+    const safeId = slugifyMenuId(entry.name);
+    return setDoc(doc(state.db, "menu_master", safeId), {
+      name: entry.name,
+      category: entry.category || "General",
+      active: entry.active !== false,
+      aliases: Array.isArray(entry.aliases) ? entry.aliases : [],
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  });
+  await Promise.allSettled(jobs);
+}
+
+function mergeMenuEntry(data) {
+  const name = String(data?.name || "").trim();
+  if (!name) return;
+  const aliases = Array.isArray(data.aliases)
+    ? data.aliases.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  const entry = {
+    name,
+    category: String(data.category || "General").trim(),
+    active: data.active !== false,
+    aliases,
+  };
+  state.menuMaster.set(normalizeMenuKey(name), entry);
+  state.aliasMap.set(normalizeMenuKey(name), name);
+  for (const alias of aliases) {
+    state.aliasMap.set(normalizeMenuKey(alias), name);
+  }
+}
+
+function ensureMenuExists(name, extra = {}) {
+  const cleanName = String(name || "").trim();
+  if (!cleanName) return;
+  const key = normalizeMenuKey(cleanName);
+  if (!state.menuMaster.has(key)) {
+    const entry = {
+      name: cleanName,
+      category: String(extra.category || "General").trim(),
+      active: true,
+      aliases: Array.isArray(extra.aliases) ? extra.aliases : [],
+    };
+    state.menuMaster.set(key, entry);
+    state.aliasMap.set(key, cleanName);
+  }
+}
+
+function normalizeMenuKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^a-zA-Z0-9ก-๙]+/g, " ")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function slugifyMenuId(value) {
+  return normalizeMenuKey(value).replace(/\s+/g, "-") || uid();
+}
+
+function canonicalizeMenuLine(line) {
+  const cleaned = cleanupMenuName(line);
+  if (!cleaned) return { name: "", raw: "", confidence: 0, matchType: "none" };
+
+  const rawKey = normalizeMenuKey(cleaned);
+  const aliasHit = state.aliasMap.get(rawKey);
+  if (aliasHit) {
+    ensureMenuExists(aliasHit);
+    return { name: aliasHit, raw: cleaned, confidence: 1, matchType: rawKey === normalizeMenuKey(aliasHit) ? "exact" : "alias" };
+  }
+
+  const exact = state.menuMaster.get(rawKey);
+  if (exact?.active !== false) {
+    return { name: exact.name, raw: cleaned, confidence: 0.99, matchType: "exact" };
+  }
+
+  let best = { score: 0, name: cleaned, matchType: "raw" };
+  for (const entry of state.menuMaster.values()) {
+    if (entry.active === false) continue;
+    const candidates = [entry.name, ...(entry.aliases || [])];
+    for (const candidate of candidates) {
+      const candidateKey = normalizeMenuKey(candidate);
+      const score = scoreMenuSimilarity(rawKey, candidateKey);
+      if (score > best.score) {
+        best = { score, name: entry.name, matchType: candidateKey === normalizeMenuKey(entry.name) ? "fuzzy" : "alias-fuzzy" };
+      }
+    }
+  }
+
+  if (best.score >= 0.76) {
+    ensureMenuExists(best.name);
+    return { name: best.name, raw: cleaned, confidence: best.score, matchType: best.matchType };
+  }
+
+  return { name: cleaned, raw: cleaned, confidence: 0.2, matchType: "raw" };
+}
+
+function scoreMenuSimilarity(inputKey, candidateKey) {
+  if (!inputKey || !candidateKey) return 0;
+  if (inputKey === candidateKey) return 1;
+  if (inputKey.includes(candidateKey) || candidateKey.includes(inputKey)) {
+    return 0.93;
+  }
+
+  const inputTokens = inputKey.split(" ").filter(Boolean);
+  const candidateTokens = candidateKey.split(" ").filter(Boolean);
+  const tokenScore = tokenOverlapScore(inputTokens, candidateTokens);
+  const editScore = normalizedLevenshteinScore(inputKey, candidateKey);
+  return Math.max(editScore * 0.72 + tokenScore * 0.28, tokenScore * 0.9);
+}
+
+function tokenOverlapScore(aTokens, bTokens) {
+  if (!aTokens.length || !bTokens.length) return 0;
+  const a = new Set(aTokens);
+  const b = new Set(bTokens);
+  let overlap = 0;
+  for (const token of a) {
+    if (b.has(token)) overlap += 1;
+  }
+  return overlap / Math.max(a.size, b.size);
+}
+
+function normalizedLevenshteinScore(a, b) {
+  const distance = levenshteinDistance(a, b);
+  return 1 - distance / Math.max(a.length, b.length, 1);
+}
+
+function levenshteinDistance(a, b) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp = Array.from({ length: rows }, () => Array(cols).fill(0));
+
+  for (let i = 0; i < rows; i += 1) dp[i][0] = i;
+  for (let j = 0; j < cols; j += 1) dp[0][j] = j;
+
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  }
+
+  return dp[a.length][b.length];
+}
+
+async function saveOcrAlias(raw, menuName) {
+  const cleanRaw = cleanupMenuName(raw);
+  const cleanName = cleanupMenuName(menuName);
+  if (!state.db || !cleanRaw || !cleanName) return;
+  if (normalizeMenuKey(cleanRaw) === normalizeMenuKey(cleanName)) return;
+
+  state.aliasMap.set(normalizeMenuKey(cleanRaw), cleanName);
+  ensureMenuExists(cleanName);
+  await setDoc(doc(state.db, "ocr_alias", slugifyMenuId(cleanRaw)), {
+    raw: cleanRaw,
+    menuName: cleanName,
+    count: 1,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 }
 
 function initRealtimeOrders() {
@@ -325,9 +612,11 @@ async function pumpOcrQueue() {
     const rawText = await runOCR(ocrBlob);
     const menuText = cleanMenuText(rawText);
     const items = buildItemsFromText(menuText);
+    const readingText = items.map((item) => item.text).join("
+");
     await updateDoc(doc(state.db, "orders", job.orderId), {
       rawText: menuText || "OCR อ่านชื่อเมนูไม่ชัด กรุณาเพิ่มรายการด้วยมือ",
-      readingText: menuText || "",
+      readingText: readingText || "",
       items,
       ocrStatus: menuText ? "done" : "error",
       updatedAt: serverTimestamp(),
@@ -395,6 +684,7 @@ function renderOrders() {
         const row = document.createElement("label");
         row.className = `item-row ${item.done ? "done" : ""}`;
         row.dataset.itemId = item.id;
+        row.dataset.itemRaw = item.raw || "";
         row.innerHTML = `
           <input type="checkbox" ${item.done ? "checked" : ""} />
           <textarea class="item-textarea" rows="1">${escapeHtml(item.text || "")}</textarea>
@@ -494,21 +784,53 @@ function collectItemsFromCard(card) {
         id: row.dataset.itemId || uid(),
         text: textInput?.value?.trim() || "",
         done: !!checkbox?.checked,
+        raw: row.dataset.itemRaw || "",
       };
     })
     .filter((item) => item.text);
 }
 
 async function syncItems(orderId, items) {
-  const completed = items.length > 0 && items.every((item) => item.done);
+  const prevItems = Array.isArray(state.orderMap.get(orderId)?.items)
+    ? state.orderMap.get(orderId).items
+    : [];
+  const prevById = new Map(prevItems.map((item) => [item.id, item]));
+
+  const normalizedItems = items
+    .map((item) => {
+      const resolved = canonicalizeMenuLine(item.text || item.raw || "");
+      return {
+        id: item.id || uid(),
+        text: resolved.name || String(item.text || "").trim(),
+        done: !!item.done,
+        raw: String(item.raw || "").trim(),
+        matchType: resolved.matchType || "manual",
+        confidence: Number(resolved.confidence || 0),
+      };
+    })
+    .filter((item) => item.text);
+
+  const completed = normalizedItems.length > 0 && normalizedItems.every((item) => item.done);
   await updateOrder(orderId, {
-    items,
-    readingText: items.map((item) => item.text).join("\n"),
-    rawText: items.map((item) => item.text).join("\n"),
+    items: normalizedItems,
+    readingText: normalizedItems.map((item) => item.text).join("\n"),
+    rawText: normalizedItems.map((item) => item.raw || item.text).join("\n"),
     completed,
     updatedAt: serverTimestamp(),
   });
+
+  const learnJobs = [];
+  for (const item of normalizedItems) {
+    const previous = prevById.get(item.id);
+    if (!item.raw || !previous) continue;
+    if (normalizeMenuKey(previous.text || "") === normalizeMenuKey(item.text || "")) continue;
+    learnJobs.push(saveOcrAlias(item.raw, item.text));
+  }
+  if (learnJobs.length) {
+    Promise.allSettled(learnJobs).catch(() => {});
+  }
 }
+
 
 async function updateOrder(orderId, patch) {
   if (!state.db) return;
@@ -742,14 +1064,24 @@ function getTimerState(order, elapsedMs) {
   return { className: "status-green" };
 }
 
-function buildItemsFromText(text) {
+function buildItemsFromText(text, options = {}) {
   const lines = String(text || "")
     .split(/\r?\n/)
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .slice(0, 30);
 
-  return lines.map((textLine) => ({ id: uid(), text: textLine, done: false }));
+  return lines.map((textLine) => {
+    const match = canonicalizeMenuLine(textLine);
+    return {
+      id: uid(),
+      text: match.name || textLine,
+      done: false,
+      raw: options.keepRaw === false ? "" : (match.raw || textLine),
+      matchType: match.matchType || "raw",
+      confidence: Number(match.confidence || 0),
+    };
+  });
 }
 
 async function runOCR(fileOrBlob) {
@@ -1044,7 +1376,7 @@ function describeOcrState(stateText) {
     case "processing":
       return "กำลังอ่านรูป";
     case "done":
-      return "อ่านเมนูแล้ว";
+      return "เทียบเมนูร้านแล้ว";
     case "error":
       return "อ่านไม่ชัด";
     default:

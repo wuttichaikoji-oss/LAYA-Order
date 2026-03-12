@@ -8,6 +8,16 @@ service cloud.firestore {
       allow update: if isValidOrderUpdate(request.resource.data);
     }
 
+    match /menu_master/{menuId} {
+      allow read: if true;
+      allow create, update: if true;
+    }
+
+    match /ocr_alias/{aliasId} {
+      allow read: if true;
+      allow create, update: if true;
+    }
+
     function isValidOrderCreate(data) {
       return data.keys().hasOnly([
         'billNo',
