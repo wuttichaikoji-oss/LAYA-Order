@@ -664,7 +664,7 @@ function renderOrders() {
     node.dataset.orderId = order.id;
 
     node.querySelector(".js-title").textContent = order.completed ? "ออเดอร์เสร็จแล้ว" : "ออเดอร์ใหม่";
-    node.querySelector(".js-meta").textContent = `เข้าบอร์ด ${formatDateTime(order.createdAtMs)}`;
+    node.querySelector(".js-meta").textContent = `เข้าบอร์ด ${formatDateTime(getOrderCreatedAtMs(order))}`;
 
     const statusEl = node.querySelector(".js-status");
     statusEl.textContent = order.completed ? "เสร็จแล้ว" : "กำลังทำ";
@@ -725,7 +725,7 @@ function attachCardEvents(card, order) {
   imageOpenBtn?.addEventListener("click", () => {
     openImageDialog(
       imageEl?.src || "",
-      `${order.completed ? "ออเดอร์เสร็จแล้ว" : "ออเดอร์ใหม่"} • ${formatDateTime(order.createdAtMs)}`
+      `${order.completed ? "ออเดอร์เสร็จแล้ว" : "ออเดอร์ใหม่"} • ${formatDateTime(getOrderCreatedAtMs(order))}`
     );
   });
 
@@ -937,6 +937,7 @@ function updateTimersAndAlerts() {
     card.querySelector(".js-elapsed").textContent = elapsedText;
     card.classList.remove("status-green", "status-yellow", "status-red", "status-critical");
     card.classList.add(timerState.className);
+    card.dataset.timerState = timerState.className;
 
     if (order.completed) {
       completedCount += 1;
@@ -1048,12 +1049,28 @@ function getVisibleOrders() {
     .filter((order) => !order.softDeleted)
     .sort((a, b) => {
       if (!!a.completed !== !!b.completed) return Number(a.completed) - Number(b.completed);
-      return Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0);
+      return getOrderCreatedAtMs(b) - getOrderCreatedAtMs(a);
     });
 }
 
+function getOrderCreatedAtMs(order) {
+  const createdAtMs = Number(order?.createdAtMs || 0);
+  if (Number.isFinite(createdAtMs) && createdAtMs > 0) return createdAtMs;
+
+  const createdAt = order?.createdAt;
+  if (createdAt && typeof createdAt.toMillis === "function") {
+    const millis = Number(createdAt.toMillis());
+    if (Number.isFinite(millis) && millis > 0) return millis;
+  }
+
+  const seconds = Number(createdAt?.seconds || 0);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+
+  return Date.now();
+}
+
 function getElapsedMs(order) {
-  return Math.max(0, Date.now() - Number(order.createdAtMs || Date.now()));
+  return Math.max(0, Date.now() - getOrderCreatedAtMs(order));
 }
 
 function getTimerState(order, elapsedMs) {
