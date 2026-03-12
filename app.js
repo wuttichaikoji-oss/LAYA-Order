@@ -616,8 +616,7 @@ async function pumpOcrQueue() {
     const rawText = await runOCR(ocrBlob);
     const menuText = cleanMenuText(rawText);
     const items = buildItemsFromText(menuText);
-    const readingText = items.map((item) => item.text).join("
-");
+    const readingText = items.map((item) => item.text).join("\n");
     await updateDoc(doc(state.db, "orders", job.orderId), {
       rawText: menuText || "OCR อ่านชื่อเมนูไม่ชัด กรุณาเพิ่มรายการด้วยมือ",
       readingText: readingText || "",
