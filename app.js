@@ -117,6 +117,7 @@ const state = {
   alertMap: new Map(),
   drag: null,
   ocrQueue: [],
+  pendingExceeded30mWrites: new Set(),
   ocrRunning: false,
   ordersQuery: null,
   pollTimer: 0,
@@ -125,7 +126,6 @@ const state = {
   menuMaster: new Map(),
   aliasMap: new Map(),
   knowledgeLoaded: false,
-  overduePersisting: new Set(),
 };
 
 const hasForm = !!els.orderForm;
@@ -620,25 +620,22 @@ async function pumpOcrQueue() {
     const ocrBlob = await resolveOcrBlob(job.fileOrBlob, job.preparedMedia);
     const rawText = await runOCR(ocrBlob);
     const menuText = cleanMenuText(rawText);
-    let items = buildItemsFromText(menuText);
-    if (!items.length) {
-      items = buildItemsFromRawOcr(rawText);
-    }
+    const items = buildItemsFromText(menuText);
     const readingText = items.map((item) => item.text).join("\n");
     await updateDoc(doc(state.db, "orders", job.orderId), {
-      rawText: menuText || rawText || "รอตรวจชื่อเมนู",
+      rawText: menuText || "OCR อ่านชื่อเมนูไม่ชัด กรุณาเพิ่มรายการด้วยมือ",
       readingText: readingText || "",
       items,
-      ocrStatus: items.length ? "done" : "review",
+      ocrStatus: menuText ? "done" : "error",
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
     console.error(error);
     await updateDoc(doc(state.db, "orders", job.orderId), {
-      rawText: "รอตรวจชื่อเมนู หรือกด + เพิ่มรายการด้วยมือ",
+      rawText: "OCR อ่านชื่อเมนูไม่สำเร็จ กรุณากด + เพิ่ม หรือแก้ไขชื่อเมนูด้วยมือ",
       readingText: "",
       items: [],
-      ocrStatus: "review",
+      ocrStatus: "error",
       updatedAt: serverTimestamp(),
     });
   } finally {
@@ -674,12 +671,12 @@ function renderOrders() {
     const node = els.orderCardTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.orderId = order.id;
 
-    node.querySelector(".js-title").textContent = order.completed ? "ออเดอร์เสร็จแล้ว" : "ออเดอร์ใหม่";
+    node.querySelector(".js-title").textContent = "ออเดอร์ใหม่";
     node.querySelector(".js-meta").textContent = `เข้าบอร์ด ${formatDateTime(getOrderCreatedAtMs(order))}`;
 
     const statusEl = node.querySelector(".js-status");
-    statusEl.textContent = order.completed ? "เสร็จแล้ว" : "กำลังทำ";
-    statusEl.classList.add(order.completed ? "is-complete" : "is-working");
+    statusEl.textContent = "กำลังทำ";
+    statusEl.classList.add("is-working");
 
     const imageEl = node.querySelector(".js-image");
     imageEl.src = order.imageUrl || PLACEHOLDER_IMAGE;
@@ -707,9 +704,9 @@ function renderOrders() {
     const completeBtn = node.querySelector(".js-mark-complete");
     const dragBtn = node.querySelector(".js-drag-delete");
 
-    completeBtn.textContent = order.completed ? "บิลนี้เสร็จแล้ว" : "ทำบิลนี้เสร็จแล้ว";
-    completeBtn.disabled = !!order.completed;
-    dragBtn.hidden = !order.completed;
+    completeBtn.textContent = "ทำบิลนี้เสร็จแล้ว";
+    completeBtn.disabled = false;
+    dragBtn.hidden = true;
 
     autoResizeTextareas(node);
     attachCardEvents(node, order);
@@ -736,7 +733,7 @@ function attachCardEvents(card, order) {
   imageOpenBtn?.addEventListener("click", () => {
     openImageDialog(
       imageEl?.src || "",
-      `${order.completed ? "ออเดอร์เสร็จแล้ว" : "ออเดอร์ใหม่"} • ${formatDateTime(getOrderCreatedAtMs(order))}`
+      `ออเดอร์ใหม่ • ${formatDateTime(getOrderCreatedAtMs(order))}`
     );
   });
 
@@ -751,17 +748,8 @@ function attachCardEvents(card, order) {
   });
 
   completeBtn.addEventListener("click", async () => {
-    const elapsedNow = getElapsedMs(order);
-    await updateOrder(order.id, {
-      completed: true,
-      completedAtMs: Date.now(),
-      completionDurationMs: elapsedNow,
-      exceeded30m: Boolean(order.exceeded30m) || elapsedNow > 30 * 60 * 1000,
-      exceeded30mAtMs: Boolean(order.exceeded30m)
-        ? Number(order.exceeded30mAtMs || 0)
-        : (elapsedNow > 30 * 60 * 1000 ? Date.now() : 0),
-      updatedAt: serverTimestamp(),
-    });
+    const latestOrder = state.orderMap.get(order.id) || order;
+    await updateOrder(order.id, buildCompletionPatch(latestOrder));
   });
 
   itemsWrap.addEventListener("change", async (event) => {
@@ -829,21 +817,22 @@ async function syncItems(orderId, items) {
     .filter((item) => item.text);
 
   const completed = normalizedItems.length > 0 && normalizedItems.every((item) => item.done);
-  const orderNow = state.orderMap.get(orderId) || {};
-  const elapsedNow = getElapsedMs(orderNow);
-  await updateOrder(orderId, {
+  const latestOrder = state.orderMap.get(orderId) || { id: orderId };
+  const basePatch = {
     items: normalizedItems,
     readingText: normalizedItems.map((item) => item.text).join("\n"),
     rawText: normalizedItems.map((item) => item.raw || item.text).join("\n"),
     completed,
-    completedAtMs: completed ? Date.now() : Number(orderNow.completedAtMs || 0),
-    completionDurationMs: completed ? elapsedNow : Number(orderNow.completionDurationMs || 0),
-    exceeded30m: Boolean(orderNow.exceeded30m) || elapsedNow > 30 * 60 * 1000,
-    exceeded30mAtMs: Boolean(orderNow.exceeded30m)
-      ? Number(orderNow.exceeded30mAtMs || 0)
-      : (elapsedNow > 30 * 60 * 1000 ? Date.now() : 0),
     updatedAt: serverTimestamp(),
-  });
+  };
+  const patch = completed
+    ? buildCompletionPatch(latestOrder, normalizedItems)
+    : {
+        ...basePatch,
+        completedAtMs: 0,
+        completionDurationMs: 0,
+      };
+  await updateOrder(orderId, patch);
 
   const learnJobs = [];
   for (const item of normalizedItems) {
@@ -936,11 +925,10 @@ function getFileKey(file) {
 
 function updateStats() {
   if (!els.activeCount || !els.overdueCount || !els.completedCount) return;
-  const allOrders = getActiveAndRecordedOrders();
-  const visibleOrders = getVisibleOrders();
-  const activeCount = visibleOrders.length;
-  const overdueCount = allOrders.filter((order) => isTodayRecord(getOrderOver30RecordMs(order))).length;
-  const completedCount = allOrders.filter((order) => isTodayRecord(getOrderCompletedRecordMs(order))).length;
+  const activeCount = state.orders.filter((order) => !order.softDeleted && !order.completed).length;
+  const todaysOrders = state.orders.filter((order) => !order.softDeleted && isTodayOrder(order));
+  const overdueCount = todaysOrders.filter((order) => hasExceeded30mRecord(order)).length;
+  const completedCount = todaysOrders.filter((order) => !!order.completed).length;
   els.activeCount.textContent = String(activeCount);
   els.overdueCount.textContent = String(overdueCount);
   els.completedCount.textContent = String(completedCount);
@@ -963,13 +951,30 @@ function updateTimersAndAlerts() {
     card.classList.add(timerState.className);
     card.dataset.timerState = timerState.className;
 
-    if (elapsedMs > 30 * 60 * 1000) {
-      maybePersistOver30Record(order, elapsedMs);
-      maybeTriggerAlert(order, elapsedMs);
+    if (elapsedMs > 30 * 60 * 1000 && !order.exceeded30m) {
+      markOrderExceeded30m(order);
     }
+
+    maybeTriggerAlert(order, elapsedMs);
   }
 
   updateStats();
+}
+
+function markOrderExceeded30m(order) {
+  if (!state.db || !order?.id || order?.exceeded30m) return;
+  const orderId = String(order.id);
+  if (state.pendingExceeded30mWrites.has(orderId)) return;
+  state.pendingExceeded30mWrites.add(orderId);
+  updateDoc(doc(state.db, 'orders', orderId), {
+    exceeded30m: true,
+    exceeded30mAtMs: Number(order?.exceeded30mAtMs || 0) > 0 ? Number(order.exceeded30mAtMs) : Date.now(),
+    updatedAt: serverTimestamp(),
+  }).catch((error) => {
+    console.warn('mark exceeded30m failed', error);
+  }).finally(() => {
+    state.pendingExceeded30mWrites.delete(orderId);
+  });
 }
 
 function maybeTriggerAlert(order, elapsedMs) {
@@ -1068,58 +1073,6 @@ function getVisibleOrders() {
     .sort((a, b) => getOrderCreatedAtMs(b) - getOrderCreatedAtMs(a));
 }
 
-function getActiveAndRecordedOrders() {
-  return [...state.orders].filter((order) => !order.softDeleted);
-}
-
-function getTodayRange() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const end = start + 24 * 60 * 60 * 1000;
-  return { start, end };
-}
-
-function isTodayRecord(timestampMs) {
-  const value = Number(timestampMs || 0);
-  if (!Number.isFinite(value) || value <= 0) return false;
-  const { start, end } = getTodayRange();
-  return value >= start && value < end;
-}
-
-function getOrderCompletedRecordMs(order) {
-  return Number(order?.completedAtMs || 0);
-}
-
-function getOrderOver30RecordMs(order) {
-  if (order?.exceeded30m) {
-    const recorded = Number(order?.exceeded30mAtMs || 0);
-    if (recorded > 0) return recorded;
-    const completedAt = Number(order?.completedAtMs || 0);
-    if (completedAt > 0) return completedAt;
-    return getOrderCreatedAtMs(order);
-  }
-  if (!order?.completed && getElapsedMs(order) > 30 * 60 * 1000) {
-    return Date.now();
-  }
-  return 0;
-}
-
-function maybePersistOver30Record(order, elapsedMs) {
-  if (!state.db || order?.completed || order?.exceeded30m) return;
-  if (elapsedMs <= 30 * 60 * 1000) return;
-  if (state.overduePersisting.has(order.id)) return;
-  state.overduePersisting.add(order.id);
-  updateDoc(doc(state.db, "orders", order.id), {
-    exceeded30m: true,
-    exceeded30mAtMs: Date.now(),
-    updatedAt: serverTimestamp(),
-  }).catch((error) => {
-    console.error(error);
-  }).finally(() => {
-    state.overduePersisting.delete(order.id);
-  });
-}
-
 function getOrderCreatedAtMs(order) {
   const createdAtMs = Number(order?.createdAtMs || 0);
   if (Number.isFinite(createdAtMs) && createdAtMs > 0) return createdAtMs;
@@ -1137,7 +1090,52 @@ function getOrderCreatedAtMs(order) {
 }
 
 function getElapsedMs(order) {
+  const completedAtMs = Number(order?.completedAtMs || 0);
+  if (Number.isFinite(completedAtMs) && completedAtMs > 0) {
+    return Math.max(0, completedAtMs - getOrderCreatedAtMs(order));
+  }
   return Math.max(0, Date.now() - getOrderCreatedAtMs(order));
+}
+
+function getTodayStartMs() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return now.getTime();
+}
+
+function isTodayOrder(order) {
+  return getOrderCreatedAtMs(order) >= getTodayStartMs();
+}
+
+function hasExceeded30mRecord(order) {
+  if (order?.exceeded30m) return true;
+  return !order?.completed && getElapsedMs(order) > 30 * 60 * 1000;
+}
+
+function buildCompletionPatch(order, itemsOverride = null) {
+  const elapsedMs = getElapsedMs(order);
+  const exceeded = hasExceeded30mRecord(order) || elapsedMs > 30 * 60 * 1000;
+  const patch = {
+    completed: true,
+    updatedAt: serverTimestamp(),
+    completedAtMs: Date.now(),
+    completionDurationMs: elapsedMs,
+    exceeded30m: exceeded,
+  };
+
+  if (exceeded && !Number(order?.exceeded30mAtMs || 0)) {
+    patch.exceeded30mAtMs = Date.now();
+  } else if (Number(order?.exceeded30mAtMs || 0)) {
+    patch.exceeded30mAtMs = Number(order.exceeded30mAtMs);
+  }
+
+  if (Array.isArray(itemsOverride)) {
+    patch.items = itemsOverride;
+    patch.readingText = itemsOverride.map((item) => item.text).join('\n');
+    patch.rawText = itemsOverride.map((item) => item.raw || item.text).join('\n');
+  }
+
+  return patch;
 }
 
 function getTimerState(order, elapsedMs) {
@@ -1168,36 +1166,6 @@ function buildItemsFromText(text, options = {}) {
   });
 
   return items.filter((item) => item.matchType !== "raw" || filterLikelyMenuLines([item.raw || item.text]).length > 0);
-}
-
-function buildItemsFromRawOcr(text) {
-  const sourceLines = String(text || "")
-    .split(/\r?\n/)
-    .map(normalizeOcrLine)
-    .filter(Boolean);
-
-  const candidateLines = mergeReceiptMenuLines(
-    sourceLines
-      .map((line) => extractStrictMenuLine(line) || extractRelaxedMenuLine(line))
-      .filter(Boolean)
-  );
-
-  const items = [];
-  for (const line of dedupeLines(candidateLines)) {
-    const match = canonicalizeMenuLine(line);
-    if (!match?.name || match.matchType === "raw") continue;
-    if (Number(match.confidence || 0) < 0.62) continue;
-    items.push({
-      id: uid(),
-      text: match.name,
-      done: false,
-      raw: match.raw || line,
-      matchType: match.matchType || "fallback",
-      confidence: Number(match.confidence || 0),
-    });
-  }
-
-  return items;
 }
 
 async function runOCR(fileOrBlob) {
@@ -1558,7 +1526,6 @@ function describeOcrState(stateText) {
     case "done":
       return "เทียบเมนูร้านแล้ว";
     case "error":
-    case "review":
       return "รอตรวจชื่อเมนู";
     default:
       return "พร้อมใช้งาน";
