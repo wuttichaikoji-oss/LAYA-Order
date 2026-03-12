@@ -20,7 +20,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const FIRESTORE_DATABASE_ID = String(window.LAYA_FIRESTORE_DATABASE_ID || "").trim();
-const MENU_CROP = { x: 0.055, y: 0.34, width: 0.75, height: 0.42 };
+const MENU_CROP = { x: 0.03, y: 0.33, width: 0.94, height: 0.44 };
 const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|panadda\b|paraq?ee\b|cover\s*\d+|t\s*:\s*[a-z0-9-]+\b|#?\(?tt\d+\)?)/i;
 
 
@@ -31,7 +31,7 @@ const MENU_MASTER_SEED = [
   { name: "Tom Kha Gai", category: "Soup", aliases: ["Tom Kha Kai"] },
   { name: "Thai Seafood Salad", category: "Salad", aliases: [] },
   { name: "Thai Beef Salad", category: "Salad", aliases: [] },
-  { name: "Clear Soup with Chicken Mince", category: "Soup", aliases: ["Clear Soup Mince Chicken", "Clear Soup Chicken", "Chicken Mince Clear Soup", "Clear Soup with Pork Mince or Chicken Mince", "Clear Soup Mince", "Clear Soup Mince Chicker", "Clear Soup Mince Chcker", "Clear Soup Mince Chcken", "Clear Soup Mince Chicken The Taste", "Clear Soup Mince Chicker"] },
+  { name: "Clear Soup with Chicken Mince", category: "Soup", aliases: ["Clear Soup Mince Chicken", "Clear Soup Chicken", "Chicken Mince Clear Soup", "Clear Soup with Pork Mince or Chicken Mince", "Clear Soup Mince", "Clear Soup Mince Chicker", "Clear Soup Mince Chicker"] },
   { name: "Clear Soup with Pork Mince", category: "Soup", aliases: ["Clear Soup Mince Pork", "Clear Soup Pork", "Pork Mince Clear Soup", "Clear Soup with Pork Mince or Chicken Mince"] },
   { name: "French Onion Soup", category: "Soup", aliases: [] },
   { name: "Satay", category: "Appetizer", aliases: ["Satay Chicken", "Chicken Satay"] },
@@ -676,8 +676,7 @@ function renderOrders() {
     const imageEl = node.querySelector(".js-image");
     imageEl.src = order.imageUrl || PLACEHOLDER_IMAGE;
 
-    const hasParsedItems = Array.isArray(order.items) && order.items.length > 0;
-    node.querySelector(".js-ocr-state").textContent = hasParsedItems ? "เทียบเมนูร้านแล้ว" : describeOcrState(order.ocrStatus);
+    node.querySelector(".js-ocr-state").textContent = describeOcrState(order.ocrStatus);
 
     const itemsWrap = node.querySelector(".js-items");
     const items = Array.isArray(order.items) ? order.items : [];
@@ -744,11 +743,8 @@ function attachCardEvents(card, order) {
   });
 
   completeBtn.addEventListener("click", async () => {
-    const finishedAt = Date.now();
     await updateOrder(order.id, {
       completed: true,
-      completedAtMs: finishedAt,
-      completionDurationMs: Math.max(0, finishedAt - getOrderCreatedAtMs(order)),
       updatedAt: serverTimestamp(),
     });
   });
@@ -917,10 +913,10 @@ function getFileKey(file) {
 
 function updateStats() {
   if (!els.activeCount || !els.overdueCount || !els.completedCount) return;
-  const records = getAllActiveRecords();
-  const activeCount = records.filter((order) => !order.completed).length;
-  const overdueCount = records.filter((order) => !order.completed && getElapsedMs(order) > 30 * 60 * 1000).length;
-  const completedCount = records.filter((order) => order.completed && isSameLocalDay(getCompletedAtMs(order) || getOrderCreatedAtMs(order))).length;
+  const visibleOrders = getVisibleOrders();
+  const activeCount = visibleOrders.filter((order) => !order.completed).length;
+  const overdueCount = visibleOrders.filter((order) => !order.completed && getElapsedMs(order) > 30 * 60 * 1000).length;
+  const completedCount = visibleOrders.filter((order) => order.completed).length;
   els.activeCount.textContent = String(activeCount);
   els.overdueCount.textContent = String(overdueCount);
   els.completedCount.textContent = String(completedCount);
@@ -929,10 +925,9 @@ function updateStats() {
 function updateTimersAndAlerts() {
   if (!hasBoard) return;
   const visibleOrders = getVisibleOrders();
-  const records = getAllActiveRecords();
   let activeCount = 0;
   let overdueCount = 0;
-  const completedCount = records.filter((order) => order.completed && isSameLocalDay(getCompletedAtMs(order) || getOrderCreatedAtMs(order))).length;
+  let completedCount = 0;
 
   for (const order of visibleOrders) {
     const card = els.ordersBoard.querySelector(`[data-order-id="${order.id}"]`);
@@ -947,13 +942,14 @@ function updateTimersAndAlerts() {
     card.classList.add(timerState.className);
     card.dataset.timerState = timerState.className;
 
-    activeCount += 1;
-    if (elapsedMs > 30 * 60 * 1000) overdueCount += 1;
-    maybeTriggerAlert(order, elapsedMs);
-  }
-
-  for (const order of records) {
-    if (order.completed) state.alertMap.delete(order.id);
+    if (order.completed) {
+      completedCount += 1;
+      state.alertMap.delete(order.id);
+    } else {
+      activeCount += 1;
+      if (elapsedMs > 30 * 60 * 1000) overdueCount += 1;
+      maybeTriggerAlert(order, elapsedMs);
+    }
   }
 
   if (els.activeCount) els.activeCount.textContent = String(activeCount);
@@ -1053,34 +1049,11 @@ function isPointerOverTrash(event) {
 
 function getVisibleOrders() {
   return [...state.orders]
-    .filter((order) => !order.softDeleted && !order.completed)
-    .sort((a, b) => getOrderCreatedAtMs(b) - getOrderCreatedAtMs(a));
-}
-
-function getAllActiveRecords() {
-  return [...state.orders].filter((order) => !order.softDeleted);
-}
-
-function getCompletedAtMs(order) {
-  const completedAtMs = Number(order?.completedAtMs || 0);
-  if (Number.isFinite(completedAtMs) && completedAtMs > 0) return completedAtMs;
-
-  const updatedAt = order?.updatedAt;
-  if (updatedAt && typeof updatedAt.toMillis === "function") {
-    const millis = Number(updatedAt.toMillis());
-    if (Number.isFinite(millis) && millis > 0) return millis;
-  }
-
-  const seconds = Number(updatedAt?.seconds || 0);
-  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
-
-  return 0;
-}
-
-function isSameLocalDay(aMs, bMs = Date.now()) {
-  const a = new Date(Number(aMs || 0));
-  const b = new Date(Number(bMs || 0));
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    .filter((order) => !order.softDeleted)
+    .sort((a, b) => {
+      if (!!a.completed !== !!b.completed) return Number(a.completed) - Number(b.completed);
+      return getOrderCreatedAtMs(b) - getOrderCreatedAtMs(a);
+    });
 }
 
 function getOrderCreatedAtMs(order) {
@@ -1134,50 +1107,11 @@ function buildItemsFromText(text, options = {}) {
 }
 
 async function runOCR(fileOrBlob) {
-  const passes = [
-    { mode: window.Tesseract?.PSM?.SINGLE_BLOCK ?? 6 },
-    { mode: window.Tesseract?.PSM?.SPARSE_TEXT ?? 11 },
-  ];
-
-  let bestText = "";
-  let bestScore = -1;
-
-  for (const pass of passes) {
-    const result = await window.Tesseract.recognize(fileOrBlob, "eng", {
-      tessedit_pageseg_mode: pass.mode,
-      preserve_interword_spaces: "1",
-    });
-    const text = String(result?.data?.text || "").trim();
-    const score = estimateOcrTextScore(text);
-    if (score > bestScore) {
-      bestText = text;
-      bestScore = score;
-    }
-    if (score >= 12) break;
-  }
-
-  return bestText.trim();
+  const result = await window.Tesseract.recognize(fileOrBlob, "eng", {
+    tessedit_pageseg_mode: window.Tesseract?.PSM?.SINGLE_BLOCK ?? 6,
+  });
+  return (result?.data?.text || "").trim();
 }
-
-function estimateOcrTextScore(text) {
-  const lines = String(text || "")
-    .split(/\r?\n/)
-    .map((line) => normalizeOcrLine(line))
-    .filter(Boolean);
-
-  let score = 0;
-  for (const line of lines) {
-    if (MENU_LINE_BLOCKLIST.test(line)) continue;
-    const letters = (line.match(/[A-Za-z]/g) || []).length;
-    const digits = (line.match(/\d/g) || []).length;
-    score += Math.max(0, letters - digits * 0.6);
-    if (/\b(chicken|soup|mince|goong|beef|salad|satay|bolognese|brownie|fanta|orange|spaghetti|carbonara|pad|thai|tom)\b/i.test(line)) {
-      score += 4;
-    }
-  }
-  return score;
-}
-
 
 async function buildMenuCropBlob(file) {
   try {
@@ -1198,22 +1132,15 @@ async function buildMenuCropBlob(file) {
     const data = imageData.data;
     for (let i = 0; i < data.length; i += 4) {
       const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      const boosted = avg > 185 ? 255 : avg < 120 ? 0 : 235;
+      const boosted = avg > 170 ? 255 : Math.max(0, avg - 28);
       data[i] = boosted;
       data[i + 1] = boosted;
       data[i + 2] = boosted;
     }
     ctx.putImageData(imageData, 0, 0);
 
-    const scaledCanvas = document.createElement("canvas");
-    scaledCanvas.width = cropWidth * 2;
-    scaledCanvas.height = cropHeight * 2;
-    const scaledCtx = scaledCanvas.getContext("2d", { alpha: false, willReadFrequently: true });
-    scaledCtx.imageSmoothingEnabled = false;
-    scaledCtx.drawImage(canvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
-
     return await new Promise((resolve) => {
-      scaledCanvas.toBlob((blob) => resolve(blob || file), "image/jpeg", 0.92);
+      canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", 0.86);
     });
   } catch (error) {
     console.warn("OCR crop skipped", error);
@@ -1246,65 +1173,24 @@ async function optimizeImage(file, options = {}) {
   }
 }
 
-
-function buildItemsFromFallbackRawText(text) {
-  const lines = String(text || "")
-    .split(/?
-/)
-    .map((line) => normalizeOcrLine(line))
-    .filter(Boolean);
-
-  const candidates = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    const current = cleanupMenuName(lines[i]);
-    const next = cleanupMenuName(lines[i + 1] || "");
-    if (current) candidates.push(current);
-    if (current && next) candidates.push(cleanupMenuName(`${current} ${stripContinuationPrefix(next)}`));
-  }
-
-  const seen = new Set();
-  const items = [];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const match = canonicalizeMenuLine(candidate);
-    if (!match.name) continue;
-    if (match.matchType === "raw") continue;
-    if ((match.confidence || 0) < 0.74) continue;
-    const key = normalizeMenuKey(match.name);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push({
-      id: uid(),
-      text: match.name,
-      done: false,
-      raw: candidate,
-      matchType: match.matchType,
-      confidence: Number(match.confidence || 0),
-    });
-  }
-
-  return items.slice(0, 12);
-}
-
 function cleanMenuText(text) {
   const sourceLines = String(text || "")
     .split(/\r?\n/)
     .map(normalizeOcrLine)
     .filter(Boolean);
 
-  const candidateLines = [];
-  for (const line of sourceLines) {
-    const strict = extractStrictMenuLine(line);
-    const relaxed = extractRelaxedMenuLine(line);
-    if (strict) candidateLines.push(strict);
-    if (relaxed && normalizeMenuKey(relaxed) !== normalizeMenuKey(strict)) candidateLines.push(relaxed);
-  }
+  const strictLines = sourceLines
+    .map(extractStrictMenuLine)
+    .filter(Boolean);
 
-  const mergedLines = mergeReceiptMenuLines(candidateLines.length ? candidateLines : sourceLines);
+  const relaxedLines = strictLines.length
+    ? strictLines
+    : sourceLines.map(extractRelaxedMenuLine).filter(Boolean);
+
+  const mergedLines = mergeReceiptMenuLines(relaxedLines);
   const finalLines = filterLikelyMenuLines(mergedLines);
   return dedupeLines(finalLines).slice(0, 30).join("\n");
 }
-
 
 function mergeReceiptMenuLines(lines) {
   const cleaned = lines
@@ -1334,37 +1220,22 @@ function mergeReceiptMenuLines(lines) {
 }
 
 function stripContinuationPrefix(value) {
-  return String(value || "")
-    .replace(/^[-–—:;]+\s*/, "")
-    .replace(/^\(+/, "")
-    .trim();
+  return String(value || "").replace(/^[-–—:;]+\s*/, "").trim();
 }
-
 
 function shouldPreferMergedLine(current, next, singleMatch, mergedMatch) {
   if (!current || !next) return false;
 
   const currentTokens = normalizeMenuKey(current).split(" ").filter(Boolean);
-  const nextValue = stripContinuationPrefix(next);
-  const nextTokens = normalizeMenuKey(nextValue).split(" ").filter(Boolean);
-  const continuationLike =
-    /^[-–—]/.test(next) ||
-    nextTokens.length <= 3 ||
-    /^[a-z]/.test(nextValue) ||
-    /^(chicken|pork|beef|rice|soup|salad|orange|spaghetti|goong|fries|nugget|brownie|cake)$/i.test(nextValue);
+  const nextTokens = normalizeMenuKey(next).split(" ").filter(Boolean);
+  const continuationLike = /^[-–—]/.test(next) || nextTokens.length <= 3 || /^[a-z]/.test(stripContinuationPrefix(next));
   if (!continuationLike) return false;
-  if (MENU_LINE_BLOCKLIST.test(nextValue)) return false;
 
-  if (mergedMatch?.name && mergedMatch.matchType !== "raw") {
-    if ((mergedMatch.confidence || 0) >= 0.9 && currentTokens.length <= 6) return true;
-    if ((mergedMatch.confidence || 0) >= (singleMatch?.confidence || 0) + 0.1) return true;
-  }
-
-  if (singleMatch?.matchType === "raw" && nextTokens.length <= 3 && currentTokens.length <= 5) return true;
-  if (singleMatch?.matchType !== "raw" && nextTokens.length === 1 && /^(chicken|pork|beef|rice|orange|cake)$/i.test(nextValue)) return true;
+  if (!mergedMatch?.name || mergedMatch.matchType === "raw") return false;
+  if ((mergedMatch.confidence || 0) >= 0.9 && currentTokens.length <= 5) return true;
+  if ((mergedMatch.confidence || 0) >= (singleMatch?.confidence || 0) + 0.12) return true;
   return false;
 }
-
 
 function filterLikelyMenuLines(lines) {
   return lines.filter((line) => {
@@ -1374,15 +1245,12 @@ function filterLikelyMenuLines(lines) {
     const cleaned = cleanupMenuName(line);
     const words = cleaned.split(/\s+/).filter(Boolean);
     const longWords = words.filter((word) => word.length >= 3);
-    const tinyWords = words.filter((word) => word.length <= 2);
     const hasMenuLikeShape = words.length >= 2 && longWords.length >= 2;
     const hasDigits = /\d/.test(cleaned);
     const weirdCaps = /\b[A-Z]{2,}\b/.test(cleaned) && words.length <= 2;
-    const tooNoisy = tinyWords.length >= Math.max(2, words.length - 1);
-    return hasMenuLikeShape && !hasDigits && !weirdCaps && !tooNoisy;
+    return hasMenuLikeShape && !hasDigits && !weirdCaps;
   });
 }
-
 
 function normalizeOcrLine(line) {
   return String(line || "")
@@ -1426,17 +1294,9 @@ function extractRelaxedMenuLine(line) {
 }
 
 function cleanupMenuName(value) {
-  let cleaned = String(value || "")
+  const cleaned = String(value || "")
     .replace(/^[^A-Za-zก-๙]+/, "")
     .replace(/[^A-Za-zก-๙()&+/' -]+$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  cleaned = cleaned
-    .replace(/\bthe taste\b/gi, "")
-    .replace(/\bpanadda\b/gi, "")
-    .replace(/\bparaq?ee\b/gi, "")
-    .replace(/\b[a-z]{1,2}\b$/i, "")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -1445,7 +1305,6 @@ function cleanupMenuName(value) {
   if (cleaned.length < 2) return "";
   return cleaned;
 }
-
 
 function dedupeLines(lines) {
   const seen = new Set();
