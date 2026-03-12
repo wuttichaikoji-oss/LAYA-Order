@@ -113,7 +113,10 @@ const state = {
   storage: null,
   orders: [],
   orderMap: new Map(),
-  voiceEnabled: loadBoolean("laya_voice_enabled", false),
+  voiceEnabled: localStorage.getItem("laya_voice_enabled") === null ? true : loadBoolean("laya_voice_enabled", false),
+  alertAudio: null,
+  alertPrimed: false,
+  alertPlaying: false,
   alertMap: new Map(),
   drag: null,
   ocrQueue: [],
@@ -159,6 +162,7 @@ function boot() {
   loadConfigIntoDialog();
   syncVoiceButton();
   bindStaticEvents();
+  prepareAlertAudio();
 
   const config = getFirebaseConfig();
   if (isValidFirebaseConfig(config)) {
@@ -180,18 +184,33 @@ function bindStaticEvents() {
   }
 
   if (hasVoiceControls) {
-    els.voiceToggleBtn.addEventListener("click", () => {
+    els.voiceToggleBtn.addEventListener("click", async () => {
       state.voiceEnabled = !state.voiceEnabled;
       localStorage.setItem("laya_voice_enabled", String(state.voiceEnabled));
       syncVoiceButton();
       if (state.voiceEnabled) {
-        speakAlertPhrase();
+        await primeAlertAudio();
+        await playAlertSignal("ออเดอร์ยังไม่เสร็จนะคะเชฟ", { includeSpeech: false });
       } else {
+        stopAlertAudio();
         window.speechSynthesis?.cancel();
       }
     });
 
-    els.testVoiceBtn.addEventListener("click", () => speakAlertPhrase());
+    els.testVoiceBtn.addEventListener("click", async () => {
+      await primeAlertAudio();
+      await playAlertSignal("ออเดอร์ยังไม่เสร็จนะคะเชฟ", { includeSpeech: false });
+    });
+
+    const unlockOnce = async () => {
+      await primeAlertAudio();
+      document.removeEventListener("pointerdown", unlockOnce, true);
+      document.removeEventListener("keydown", unlockOnce, true);
+      document.removeEventListener("touchstart", unlockOnce, true);
+    };
+    document.addEventListener("pointerdown", unlockOnce, true);
+    document.addEventListener("keydown", unlockOnce, true);
+    document.addEventListener("touchstart", unlockOnce, true);
   }
 
   if (hasSetupDialog && els.openSetupBtn) {
@@ -986,7 +1005,106 @@ function maybeTriggerAlert(order, elapsedMs) {
   if (now - lastAlertAt < 5 * 60 * 1000) return;
 
   state.alertMap.set(order.id, now);
-  speakAlertPhrase(order.alertPhrase || "ออเดอร์ยังไม่เสร็จนะคะเชฟ");
+  playAlertSignal(order.alertPhrase || "ออเดอร์ยังไม่เสร็จนะคะเชฟ", { includeSpeech: false });
+}
+
+function prepareAlertAudio() {
+  if (state.alertAudio) return state.alertAudio;
+  try {
+    const audio = new Audio(ALERT_AUDIO_URL);
+    audio.preload = "auto";
+    audio.playsInline = true;
+    state.alertAudio = audio;
+    return audio;
+  } catch (error) {
+    console.warn("prepareAlertAudio failed", error);
+    return null;
+  }
+}
+
+async function primeAlertAudio() {
+  const audio = prepareAlertAudio();
+  if (!audio || state.alertPrimed) return;
+  try {
+    audio.muted = true;
+    audio.volume = 0;
+    audio.currentTime = 0;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = false;
+    audio.volume = 1;
+    state.alertPrimed = true;
+  } catch (error) {
+    audio.muted = false;
+    audio.volume = 1;
+    console.warn("primeAlertAudio failed", error);
+  }
+}
+
+function stopAlertAudio() {
+  if (!state.alertAudio) return;
+  try {
+    state.alertAudio.pause();
+    state.alertAudio.currentTime = 0;
+  } catch (error) {
+    console.warn("stopAlertAudio failed", error);
+  }
+  state.alertPlaying = false;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function waitForAudioEnd(audio) {
+  return new Promise((resolve) => {
+    const done = () => {
+      audio.removeEventListener("ended", done);
+      audio.removeEventListener("error", done);
+      resolve();
+    };
+    audio.addEventListener("ended", done, { once: true });
+    audio.addEventListener("error", done, { once: true });
+  });
+}
+
+async function playAlertAudioSequence(repeats = 3) {
+  const audio = prepareAlertAudio();
+  if (!audio) return false;
+  if (state.alertPlaying) return true;
+
+  state.alertPlaying = true;
+  try {
+    for (let i = 0; i < repeats; i += 1) {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = false;
+      audio.volume = 1;
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.then === "function") {
+        await playPromise;
+      }
+      await waitForAudioEnd(audio);
+      if (i < repeats - 1) {
+        await wait(250);
+      }
+    }
+    return true;
+  } catch (error) {
+    console.warn("playAlertAudioSequence failed", error);
+    return false;
+  } finally {
+    state.alertPlaying = false;
+  }
+}
+
+async function playAlertSignal(text = "ออเดอร์ยังไม่เสร็จนะคะเชฟ", options = {}) {
+  const { includeSpeech = false } = options;
+  const played = await playAlertAudioSequence(3);
+  if (!played || includeSpeech) {
+    speakAlertPhrase(text);
+  }
 }
 
 function speakAlertPhrase(text = "ออเดอร์ยังไม่เสร็จนะคะเชฟ") {

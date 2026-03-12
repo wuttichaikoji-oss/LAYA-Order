@@ -1,4 +1,4 @@
-const CACHE_NAME = 'laya-order-tracker-v5-defaultdb';
+const CACHE_NAME = 'laya-order-tracker-v6-sound-alert';
 const APP_SHELL = [
   './',
   './index.html',
@@ -10,7 +10,8 @@ const APP_SHELL = [
   './firebase-config.js',
   './manifest.webmanifest',
   './assets/icon-192.png',
-  './assets/icon-512.png'
+  './assets/icon-512.png',
+  './assets/alerts/chef-alert.mp3'
 ];
 
 self.addEventListener('install', (event) => {
