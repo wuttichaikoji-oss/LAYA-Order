@@ -676,7 +676,8 @@ function renderOrders() {
     const imageEl = node.querySelector(".js-image");
     imageEl.src = order.imageUrl || PLACEHOLDER_IMAGE;
 
-    node.querySelector(".js-ocr-state").textContent = describeOcrState(order.ocrStatus);
+    const hasParsedItems = Array.isArray(order.items) && order.items.length > 0;
+    node.querySelector(".js-ocr-state").textContent = hasParsedItems ? "เทียบเมนูร้านแล้ว" : describeOcrState(order.ocrStatus);
 
     const itemsWrap = node.querySelector(".js-items");
     const items = Array.isArray(order.items) ? order.items : [];
@@ -743,8 +744,11 @@ function attachCardEvents(card, order) {
   });
 
   completeBtn.addEventListener("click", async () => {
+    const finishedAt = Date.now();
     await updateOrder(order.id, {
       completed: true,
+      completedAtMs: finishedAt,
+      completionDurationMs: Math.max(0, finishedAt - getOrderCreatedAtMs(order)),
       updatedAt: serverTimestamp(),
     });
   });
@@ -913,10 +917,10 @@ function getFileKey(file) {
 
 function updateStats() {
   if (!els.activeCount || !els.overdueCount || !els.completedCount) return;
-  const visibleOrders = getVisibleOrders();
-  const activeCount = visibleOrders.filter((order) => !order.completed).length;
-  const overdueCount = visibleOrders.filter((order) => !order.completed && getElapsedMs(order) > 30 * 60 * 1000).length;
-  const completedCount = visibleOrders.filter((order) => order.completed).length;
+  const records = getAllActiveRecords();
+  const activeCount = records.filter((order) => !order.completed).length;
+  const overdueCount = records.filter((order) => !order.completed && getElapsedMs(order) > 30 * 60 * 1000).length;
+  const completedCount = records.filter((order) => order.completed && isSameLocalDay(getCompletedAtMs(order) || getOrderCreatedAtMs(order))).length;
   els.activeCount.textContent = String(activeCount);
   els.overdueCount.textContent = String(overdueCount);
   els.completedCount.textContent = String(completedCount);
@@ -925,9 +929,10 @@ function updateStats() {
 function updateTimersAndAlerts() {
   if (!hasBoard) return;
   const visibleOrders = getVisibleOrders();
+  const records = getAllActiveRecords();
   let activeCount = 0;
   let overdueCount = 0;
-  let completedCount = 0;
+  const completedCount = records.filter((order) => order.completed && isSameLocalDay(getCompletedAtMs(order) || getOrderCreatedAtMs(order))).length;
 
   for (const order of visibleOrders) {
     const card = els.ordersBoard.querySelector(`[data-order-id="${order.id}"]`);
@@ -942,14 +947,13 @@ function updateTimersAndAlerts() {
     card.classList.add(timerState.className);
     card.dataset.timerState = timerState.className;
 
-    if (order.completed) {
-      completedCount += 1;
-      state.alertMap.delete(order.id);
-    } else {
-      activeCount += 1;
-      if (elapsedMs > 30 * 60 * 1000) overdueCount += 1;
-      maybeTriggerAlert(order, elapsedMs);
-    }
+    activeCount += 1;
+    if (elapsedMs > 30 * 60 * 1000) overdueCount += 1;
+    maybeTriggerAlert(order, elapsedMs);
+  }
+
+  for (const order of records) {
+    if (order.completed) state.alertMap.delete(order.id);
   }
 
   if (els.activeCount) els.activeCount.textContent = String(activeCount);
@@ -1049,11 +1053,34 @@ function isPointerOverTrash(event) {
 
 function getVisibleOrders() {
   return [...state.orders]
-    .filter((order) => !order.softDeleted)
-    .sort((a, b) => {
-      if (!!a.completed !== !!b.completed) return Number(a.completed) - Number(b.completed);
-      return getOrderCreatedAtMs(b) - getOrderCreatedAtMs(a);
-    });
+    .filter((order) => !order.softDeleted && !order.completed)
+    .sort((a, b) => getOrderCreatedAtMs(b) - getOrderCreatedAtMs(a));
+}
+
+function getAllActiveRecords() {
+  return [...state.orders].filter((order) => !order.softDeleted);
+}
+
+function getCompletedAtMs(order) {
+  const completedAtMs = Number(order?.completedAtMs || 0);
+  if (Number.isFinite(completedAtMs) && completedAtMs > 0) return completedAtMs;
+
+  const updatedAt = order?.updatedAt;
+  if (updatedAt && typeof updatedAt.toMillis === "function") {
+    const millis = Number(updatedAt.toMillis());
+    if (Number.isFinite(millis) && millis > 0) return millis;
+  }
+
+  const seconds = Number(updatedAt?.seconds || 0);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+
+  return 0;
+}
+
+function isSameLocalDay(aMs, bMs = Date.now()) {
+  const a = new Date(Number(aMs || 0));
+  const b = new Date(Number(bMs || 0));
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 function getOrderCreatedAtMs(order) {
@@ -1217,6 +1244,46 @@ async function optimizeImage(file, options = {}) {
     console.warn("Image optimization skipped", error);
     return file;
   }
+}
+
+
+function buildItemsFromFallbackRawText(text) {
+  const lines = String(text || "")
+    .split(/?
+/)
+    .map((line) => normalizeOcrLine(line))
+    .filter(Boolean);
+
+  const candidates = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const current = cleanupMenuName(lines[i]);
+    const next = cleanupMenuName(lines[i + 1] || "");
+    if (current) candidates.push(current);
+    if (current && next) candidates.push(cleanupMenuName(`${current} ${stripContinuationPrefix(next)}`));
+  }
+
+  const seen = new Set();
+  const items = [];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const match = canonicalizeMenuLine(candidate);
+    if (!match.name) continue;
+    if (match.matchType === "raw") continue;
+    if ((match.confidence || 0) < 0.74) continue;
+    const key = normalizeMenuKey(match.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({
+      id: uid(),
+      text: match.name,
+      done: false,
+      raw: candidate,
+      matchType: match.matchType,
+      confidence: Number(match.confidence || 0),
+    });
+  }
+
+  return items.slice(0, 12);
 }
 
 function cleanMenuText(text) {
