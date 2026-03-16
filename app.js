@@ -756,37 +756,14 @@ function attachCardEvents(card, order) {
     );
   });
 
-  const addInlineItemRow = (prefill = "") => {
-    const emptyHint = itemsWrap.querySelector(".muted.small");
-    emptyHint?.remove();
-
-    const row = document.createElement("label");
-    row.className = "item-row";
-    row.dataset.itemId = uid();
-    row.dataset.itemRaw = "";
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-
-    const textarea = document.createElement("textarea");
-    textarea.className = "item-textarea";
-    textarea.rows = 1;
-    textarea.placeholder = "พิมพ์ชื่อเมนู";
-    textarea.value = prefill;
-
-    row.appendChild(checkbox);
-    row.appendChild(textarea);
-    itemsWrap.appendChild(row);
-
-    autoResizeTextarea(textarea);
-    textarea.focus();
-    const length = textarea.value.length;
-    textarea.setSelectionRange(length, length);
-    return row;
-  };
-
-  addItemBtn.addEventListener("click", () => {
-    addInlineItemRow("");
+  addItemBtn.addEventListener("click", async () => {
+    const itemText = window.prompt("เพิ่มรายการอาหาร", "");
+    if (!itemText || !itemText.trim()) return;
+    const currentItems = Array.isArray(state.orderMap.get(order.id)?.items)
+      ? [...state.orderMap.get(order.id).items]
+      : [];
+    currentItems.push({ id: uid(), text: itemText.trim(), done: false });
+    await syncItems(order.id, currentItems);
   });
 
   completeBtn.addEventListener("click", async () => {
@@ -810,43 +787,14 @@ function attachCardEvents(card, order) {
     syncItemsDebounced();
   });
 
-  itemsWrap.addEventListener("keydown", async (event) => {
+  itemsWrap.addEventListener("keydown", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLTextAreaElement)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      event.stopPropagation();
-      const text = target.value.trim();
-      target.value = text;
-      autoResizeTextarea(target);
-      await syncItems(order.id, collectItemsFromCard(card));
-      const row = target.closest('.item-row');
-      const isLastRow = !!row && row === itemsWrap.querySelector('.item-row:last-of-type');
-      if (text && isLastRow) {
-        window.setTimeout(() => addInlineItemRow(""), 0);
-      }
+      target.blur();
     }
   });
-
-  itemsWrap.addEventListener("blur", async (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLTextAreaElement)) return;
-    const row = target.closest('.item-row');
-    if (!row) return;
-
-    const text = target.value.trim();
-    target.value = text;
-    autoResizeTextarea(target);
-
-    if (!text) {
-      row.remove();
-      if (!itemsWrap.querySelector('.item-row')) {
-        itemsWrap.innerHTML = `<div class="muted small">ยังไม่มีชื่อเมนู กรุณากด + เพิ่ม</div>`;
-      }
-    }
-
-    await syncItems(order.id, collectItemsFromCard(card));
-  }, true);
 
   dragBtn.addEventListener("pointerdown", (event) => startDragDelete(event, order.id, card));
 }
@@ -868,21 +816,17 @@ function collectItemsFromCard(card) {
 }
 
 async function syncItems(orderId, items) {
-  const prevItems = Array.isArray(state.orderMap.get(orderId)?.items)
-    ? state.orderMap.get(orderId).items
-    : [];
-  const prevById = new Map(prevItems.map((item) => [item.id, item]));
-
   const normalizedItems = items
     .map((item) => {
-      const resolved = canonicalizeMenuLine(item.text || item.raw || "");
+      const text = String(item.text || "").trim();
+      const raw = String(item.raw || "").trim();
       return {
         id: item.id || uid(),
-        text: resolved.name || String(item.text || "").trim(),
+        text,
         done: !!item.done,
-        raw: String(item.raw || "").trim(),
-        matchType: resolved.matchType || "manual",
-        confidence: Number(resolved.confidence || 0),
+        raw,
+        matchType: "manual",
+        confidence: text ? 1 : 0,
       };
     })
     .filter((item) => item.text);
@@ -904,17 +848,6 @@ async function syncItems(orderId, items) {
         completionDurationMs: 0,
       };
   await updateOrder(orderId, patch);
-
-  const learnJobs = [];
-  for (const item of normalizedItems) {
-    const previous = prevById.get(item.id);
-    if (!item.raw || !previous) continue;
-    if (normalizeMenuKey(previous.text || "") === normalizeMenuKey(item.text || "")) continue;
-    learnJobs.push(saveOcrAlias(item.raw, item.text));
-  }
-  if (learnJobs.length) {
-    Promise.allSettled(learnJobs).catch(() => {});
-  }
 }
 
 
