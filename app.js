@@ -756,14 +756,26 @@ function attachCardEvents(card, order) {
     );
   });
 
-  addItemBtn.addEventListener("click", async () => {
-    const itemText = window.prompt("เพิ่มรายการอาหาร", "");
-    if (!itemText || !itemText.trim()) return;
-    const currentItems = Array.isArray(state.orderMap.get(order.id)?.items)
-      ? [...state.orderMap.get(order.id).items]
-      : [];
-    currentItems.push({ id: uid(), text: itemText.trim(), done: false });
-    await syncItems(order.id, currentItems);
+  addItemBtn.addEventListener("click", () => {
+    const emptyState = itemsWrap.querySelector(".muted.small");
+    if (emptyState) emptyState.remove();
+
+    const row = document.createElement("label");
+    row.className = "item-row";
+    row.dataset.itemId = uid();
+    row.dataset.itemRaw = "";
+    row.innerHTML = `
+      <input type="checkbox" />
+      <textarea class="item-textarea" rows="1" placeholder="พิมพ์ชื่อเมนู"></textarea>
+    `;
+    itemsWrap.appendChild(row);
+
+    const textarea = row.querySelector("textarea");
+    if (textarea) {
+      autoResizeTextarea(textarea);
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
   });
 
   completeBtn.addEventListener("click", async () => {
