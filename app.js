@@ -749,6 +749,30 @@ function attachCardEvents(card, order) {
     await syncItems(order.id, items);
   }, 450);
 
+  const addInlineItemRow = (prefill = "") => {
+    const emptyHint = itemsWrap.querySelector(".muted.small");
+    emptyHint?.remove();
+
+    const row = document.createElement("label");
+    row.className = "item-row";
+    row.dataset.itemId = uid();
+    row.dataset.itemRaw = "";
+    row.innerHTML = `
+      <input type="checkbox" />
+      <textarea class="item-textarea" rows="1" placeholder="พิมพ์ชื่อเมนู">${escapeHtml(prefill)}</textarea>
+    `;
+    itemsWrap.appendChild(row);
+
+    const textarea = row.querySelector("textarea");
+    if (textarea) {
+      autoResizeTextarea(textarea);
+      textarea.focus();
+      const length = textarea.value.length;
+      textarea.setSelectionRange(length, length);
+    }
+    return row;
+  };
+
   imageOpenBtn?.addEventListener("click", () => {
     openImageDialog(
       imageEl?.src || "",
@@ -757,25 +781,7 @@ function attachCardEvents(card, order) {
   });
 
   addItemBtn.addEventListener("click", () => {
-    const emptyState = itemsWrap.querySelector(".muted.small");
-    if (emptyState) emptyState.remove();
-
-    const row = document.createElement("label");
-    row.className = "item-row";
-    row.dataset.itemId = uid();
-    row.dataset.itemRaw = "";
-    row.innerHTML = `
-      <input type="checkbox" />
-      <textarea class="item-textarea" rows="1" placeholder="พิมพ์ชื่อเมนู"></textarea>
-    `;
-    itemsWrap.appendChild(row);
-
-    const textarea = row.querySelector("textarea");
-    if (textarea) {
-      autoResizeTextarea(textarea);
-      textarea.focus();
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-    }
+    addInlineItemRow("");
   });
 
   completeBtn.addEventListener("click", async () => {
@@ -799,14 +805,36 @@ function attachCardEvents(card, order) {
     syncItemsDebounced();
   });
 
-  itemsWrap.addEventListener("keydown", (event) => {
+  itemsWrap.addEventListener("keydown", async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLTextAreaElement)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      target.blur();
+      const text = target.value.trim();
+      await syncItems(order.id, collectItemsFromCard(card));
+      if (text) {
+        const row = target.closest('.item-row');
+        const isLastRow = row && row === itemsWrap.querySelector('.item-row:last-of-type');
+        if (isLastRow) {
+          addInlineItemRow("");
+        }
+      }
     }
   });
+
+  itemsWrap.addEventListener("blur", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    const row = target.closest('.item-row');
+    if (!row) return;
+    if (!target.value.trim()) {
+      row.remove();
+      if (!itemsWrap.querySelector('.item-row')) {
+        itemsWrap.innerHTML = `<div class="muted small">ยังไม่มีชื่อเมนู กรุณากด + เพิ่ม</div>`;
+      }
+    }
+    await syncItems(order.id, collectItemsFromCard(card));
+  }, true);
 
   dragBtn.addEventListener("pointerdown", (event) => startDragDelete(event, order.id, card));
 }
