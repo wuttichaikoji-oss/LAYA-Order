@@ -749,6 +749,13 @@ function attachCardEvents(card, order) {
     await syncItems(order.id, items);
   }, 450);
 
+  imageOpenBtn?.addEventListener("click", () => {
+    openImageDialog(
+      imageEl?.src || "",
+      `ออเดอร์ใหม่ • ${formatDateTime(getOrderCreatedAtMs(order))}`
+    );
+  });
+
   const addInlineItemRow = (prefill = "") => {
     const emptyHint = itemsWrap.querySelector(".muted.small");
     emptyHint?.remove();
@@ -757,28 +764,26 @@ function attachCardEvents(card, order) {
     row.className = "item-row";
     row.dataset.itemId = uid();
     row.dataset.itemRaw = "";
-    row.innerHTML = `
-      <input type="checkbox" />
-      <textarea class="item-textarea" rows="1" placeholder="พิมพ์ชื่อเมนู">${escapeHtml(prefill)}</textarea>
-    `;
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "item-textarea";
+    textarea.rows = 1;
+    textarea.placeholder = "พิมพ์ชื่อเมนู";
+    textarea.value = prefill;
+
+    row.appendChild(checkbox);
+    row.appendChild(textarea);
     itemsWrap.appendChild(row);
 
-    const textarea = row.querySelector("textarea");
-    if (textarea) {
-      autoResizeTextarea(textarea);
-      textarea.focus();
-      const length = textarea.value.length;
-      textarea.setSelectionRange(length, length);
-    }
+    autoResizeTextarea(textarea);
+    textarea.focus();
+    const length = textarea.value.length;
+    textarea.setSelectionRange(length, length);
     return row;
   };
-
-  imageOpenBtn?.addEventListener("click", () => {
-    openImageDialog(
-      imageEl?.src || "",
-      `ออเดอร์ใหม่ • ${formatDateTime(getOrderCreatedAtMs(order))}`
-    );
-  });
 
   addItemBtn.addEventListener("click", () => {
     addInlineItemRow("");
@@ -810,14 +815,15 @@ function attachCardEvents(card, order) {
     if (!(target instanceof HTMLTextAreaElement)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
+      event.stopPropagation();
       const text = target.value.trim();
+      target.value = text;
+      autoResizeTextarea(target);
       await syncItems(order.id, collectItemsFromCard(card));
-      if (text) {
-        const row = target.closest('.item-row');
-        const isLastRow = row && row === itemsWrap.querySelector('.item-row:last-of-type');
-        if (isLastRow) {
-          addInlineItemRow("");
-        }
+      const row = target.closest('.item-row');
+      const isLastRow = !!row && row === itemsWrap.querySelector('.item-row:last-of-type');
+      if (text && isLastRow) {
+        window.setTimeout(() => addInlineItemRow(""), 0);
       }
     }
   });
@@ -827,12 +833,18 @@ function attachCardEvents(card, order) {
     if (!(target instanceof HTMLTextAreaElement)) return;
     const row = target.closest('.item-row');
     if (!row) return;
-    if (!target.value.trim()) {
+
+    const text = target.value.trim();
+    target.value = text;
+    autoResizeTextarea(target);
+
+    if (!text) {
       row.remove();
       if (!itemsWrap.querySelector('.item-row')) {
         itemsWrap.innerHTML = `<div class="muted small">ยังไม่มีชื่อเมนู กรุณากด + เพิ่ม</div>`;
       }
     }
+
     await syncItems(order.id, collectItemsFromCard(card));
   }, true);
 
