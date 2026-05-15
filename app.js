@@ -20,6 +20,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const FIRESTORE_DATABASE_ID = String(window.LAYA_FIRESTORE_DATABASE_ID || "").trim();
+const ALERT_AUDIO_URL = "assets/alerts/chef-alert.mp3";
+const AMENITY_ALERT_LEAD_MS = 30 * 60 * 1000;
 const MENU_CROP = { x: 0.03, y: 0.33, width: 0.94, height: 0.44 };
 const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|panadda\b|paraq?ee\b|cover\s*\d+|t\s*:\s*[a-z0-9-]+\b|#?\(?tt\d+\)?)/i;
 
@@ -106,6 +108,25 @@ const els = {
   imageDialogImg: document.getElementById("imageDialogImg"),
   imageDialogCaption: document.getElementById("imageDialogCaption"),
   closeImageDialogBtn: document.getElementById("closeImageDialogBtn"),
+  amenityForm: document.getElementById("amenityForm"),
+  amenityPhotoInput: document.getElementById("amenityPhotoInput"),
+  amenityPhotoPreviewWrap: document.getElementById("amenityPhotoPreviewWrap"),
+  amenityPhotoPreview: document.getElementById("amenityPhotoPreview"),
+  amenityItemType: document.getElementById("amenityItemType"),
+  amenityOtherWrap: document.getElementById("amenityOtherWrap"),
+  amenityOtherText: document.getElementById("amenityOtherText"),
+  amenityServiceDate: document.getElementById("amenityServiceDate"),
+  amenityServiceTime: document.getElementById("amenityServiceTime"),
+  amenityReceiver: document.getElementById("amenityReceiver"),
+  amenitySender: document.getElementById("amenitySender"),
+  amenityNotes: document.getElementById("amenityNotes"),
+  amenitySubmitBtn: document.getElementById("amenitySubmitBtn"),
+  amenityStatus: document.getElementById("amenityStatus"),
+  amenityBoard: document.getElementById("amenityBoard"),
+  amenityCardTemplate: document.getElementById("amenityCardTemplate"),
+  amenityActiveCount: document.getElementById("amenityActiveCount"),
+  amenityDueSoonCount: document.getElementById("amenityDueSoonCount"),
+  amenityAlertingCount: document.getElementById("amenityAlertingCount"),
 };
 
 const state = {
@@ -113,16 +134,21 @@ const state = {
   storage: null,
   orders: [],
   orderMap: new Map(),
+  amenities: [],
+  amenityMap: new Map(),
   voiceEnabled: localStorage.getItem("laya_voice_enabled") === null ? true : loadBoolean("laya_voice_enabled", false),
   alertAudio: null,
+  amenityLoopAudio: null,
   alertPrimed: false,
   alertPlaying: false,
   alertMap: new Map(),
+  amenityAlertActive: false,
   drag: null,
   ocrQueue: [],
   pendingExceeded30mWrites: new Set(),
   ocrRunning: false,
   ordersQuery: null,
+  amenitiesQuery: null,
   pollTimer: 0,
   lastSnapshotAt: 0,
   preparedMedia: null,
@@ -133,6 +159,8 @@ const state = {
 
 const hasForm = !!els.orderForm;
 const hasBoard = !!els.ordersBoard && !!els.orderCardTemplate;
+const hasAmenityForm = !!els.amenityForm;
+const hasAmenityBoard = !!els.amenityBoard && !!els.amenityCardTemplate;
 const hasVoiceControls = !!els.voiceToggleBtn && !!els.testVoiceBtn;
 const hasSetupDialog = !!els.setupDialog;
 const hasImageDialog = !!els.imageDialog && !!els.imageDialogImg;
@@ -172,8 +200,11 @@ function boot() {
     renderOrders();
   }
 
-  if (hasBoard || hasVoiceControls) {
-    setInterval(updateTimersAndAlerts, 1000);
+  if (hasBoard || hasAmenityBoard || hasVoiceControls) {
+    setInterval(() => {
+      updateTimersAndAlerts();
+      updateAmenityTimersAndAlerts();
+    }, 1000);
   }
 }
 
@@ -181,6 +212,14 @@ function bindStaticEvents() {
   if (hasForm) {
     els.photoInput?.addEventListener("change", handlePhotoPreview);
     els.orderForm.addEventListener("submit", handleOrderSubmit);
+  }
+
+  if (hasAmenityForm) {
+    hydrateAmenityDefaults();
+    els.amenityPhotoInput?.addEventListener("change", handleAmenityPhotoPreview);
+    els.amenityItemType?.addEventListener("change", syncAmenityOtherField);
+    els.amenityForm.addEventListener("submit", handleAmenitySubmit);
+    syncAmenityOtherField();
   }
 
   if (hasVoiceControls) {
@@ -193,6 +232,7 @@ function bindStaticEvents() {
         await playAlertSignal("ออเดอร์ยังไม่เสร็จนะคะเชฟ", { includeSpeech: false });
       } else {
         stopAlertAudio();
+        stopAmenityLoopAudio();
         window.speechSynthesis?.cancel();
       }
     });
@@ -243,6 +283,7 @@ function initFirebase(config) {
     els.setupNotice?.classList.add("hidden");
     primeMenuKnowledge();
     if (hasBoard) initRealtimeOrders();
+    if (hasAmenityBoard) initRealtimeAmenities();
   } catch (error) {
     console.error(error);
     const hint = FIRESTORE_DATABASE_ID ? ` (Firestore database: ${FIRESTORE_DATABASE_ID})` : "";
@@ -498,12 +539,21 @@ function initRealtimeOrders() {
     state.pollTimer = window.setInterval(() => {
       if (Date.now() - state.lastSnapshotAt > 8000) {
         refreshOrdersOnce();
+        refreshAmenitiesOnce();
       }
     }, 5000);
 
-    window.addEventListener("focus", () => refreshOrdersOnce(), { passive: true });
+    window.addEventListener("focus", () => {
+      refreshOrdersOnce();
+      refreshAmenitiesOnce();
+    }, { passive: true });
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") refreshOrdersOnce();
+      if (document.visibilityState === "visible") {
+        refreshOrdersOnce();
+        refreshAmenitiesOnce();
+      } else {
+        stopAmenityLoopAudio();
+      }
     });
   }
 
@@ -663,6 +713,471 @@ async function pumpOcrQueue() {
       window.setTimeout(() => pumpOcrQueue(), 60);
     }
   }
+}
+
+
+function initRealtimeAmenities() {
+  state.amenitiesQuery = query(collection(state.db, "amenity_orders"), orderBy("serviceAtMs", "asc"));
+  onSnapshot(
+    state.amenitiesQuery,
+    (snapshot) => {
+      state.lastSnapshotAt = Date.now();
+      applyAmenitiesSnapshot(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    },
+    (error) => {
+      console.error(error);
+      setAmenityStatus(`โหลดข้อมูลงาน Amenity ไม่สำเร็จ: ${error.message}`, "error");
+    }
+  );
+
+  refreshAmenitiesOnce();
+}
+
+function hydrateAmenityDefaults() {
+  const now = new Date();
+  if (els.amenityServiceDate && !els.amenityServiceDate.value) {
+    els.amenityServiceDate.value = toDateInputValue(now);
+    els.amenityServiceDate.min = toDateInputValue(now);
+  }
+  if (els.amenityServiceTime && !els.amenityServiceTime.value) {
+    const rounded = new Date(now.getTime() + 60 * 60 * 1000);
+    rounded.setMinutes(Math.ceil(rounded.getMinutes() / 15) * 15, 0, 0);
+    els.amenityServiceTime.value = toTimeInputValue(rounded);
+  }
+}
+
+function syncAmenityOtherField() {
+  const isOther = els.amenityItemType?.value === "other";
+  els.amenityOtherWrap?.classList.toggle("hidden", !isOther);
+  if (els.amenityOtherText) {
+    els.amenityOtherText.required = isOther;
+    if (!isOther) els.amenityOtherText.value = "";
+  }
+}
+
+function handleAmenityPhotoPreview(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
+    els.amenityPhotoPreviewWrap?.classList.add("hidden");
+    setAmenityStatus("ยังไม่ได้เลือกรูป Amenity", "");
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  if (els.amenityPhotoPreview) {
+    els.amenityPhotoPreview.onload = () => URL.revokeObjectURL(url);
+    els.amenityPhotoPreview.src = url;
+  }
+  els.amenityPhotoPreviewWrap?.classList.remove("hidden");
+  setAmenityStatus("เลือกรูปแล้ว — กรอกข้อมูลด้านล่างแล้วกด Save Amenity", "success");
+}
+
+async function handleAmenitySubmit(event) {
+  event.preventDefault();
+  if (!state.db || !state.storage) {
+    setAmenityStatus("กรุณาตั้งค่า Firebase ก่อนใช้งาน", "error");
+    els.setupDialog?.showModal();
+    return;
+  }
+
+  const file = els.amenityPhotoInput?.files?.[0];
+  if (!file) {
+    setAmenityStatus("กรุณาถ่ายรูป/แนบรูป Amenity ก่อนกรอกและบันทึก", "error");
+    return;
+  }
+
+  const itemType = String(els.amenityItemType?.value || "").trim();
+  const otherText = String(els.amenityOtherText?.value || "").trim();
+  const itemLabel = getAmenityItemLabel(itemType, otherText);
+  const serviceDate = String(els.amenityServiceDate?.value || "").trim();
+  const serviceTime = String(els.amenityServiceTime?.value || "").trim();
+  const receiverName = String(els.amenityReceiver?.value || "").trim();
+  const senderName = String(els.amenitySender?.value || "").trim();
+  const notes = String(els.amenityNotes?.value || "").trim();
+  const serviceAtMs = parseLocalDateTimeMs(serviceDate, serviceTime);
+
+  if (!itemType || !itemLabel) {
+    setAmenityStatus("กรุณาเลือกว่าต้องการสั่งอะไร", "error");
+    return;
+  }
+  if (!Number.isFinite(serviceAtMs)) {
+    setAmenityStatus("กรุณาเลือกวันที่และเวลาที่ต้องบริการ", "error");
+    return;
+  }
+  if (!receiverName || !senderName) {
+    setAmenityStatus("กรุณากรอกผู้รับงานและผู้ส่งงาน", "error");
+    return;
+  }
+
+  try {
+    setAmenityLoading(true, "กำลังบันทึกงาน Amenity...");
+    const createdAtMs = Date.now();
+    const amenityRef = await addDoc(collection(state.db, "amenity_orders"), {
+      itemType,
+      itemLabel,
+      otherText,
+      serviceDate,
+      serviceTime,
+      serviceAtMs,
+      receiverName,
+      senderName,
+      notes,
+      photoUrl: "",
+      photoStatus: "uploading",
+      status: "pending",
+      alertAcknowledged: false,
+      alertAcknowledgedAtMs: 0,
+      alertStartedAtMs: 0,
+      completed: false,
+      softDeleted: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      createdAtMs,
+      completedAtMs: 0,
+    });
+
+    uploadAmenityPhoto(amenityRef.id, file).catch(async (error) => {
+      console.error(error);
+      await updateAmenity(amenityRef.id, {
+        photoStatus: "error",
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    resetAmenityForm();
+    setAmenityLoading(false);
+    setAmenityStatus("บันทึกงาน Amenity แล้ว ระบบจะเตือนก่อนเวลาบริการ 30 นาที", "success");
+  } catch (error) {
+    console.error(error);
+    setAmenityLoading(false);
+    setAmenityStatus(`บันทึกงาน Amenity ไม่สำเร็จ: ${error.message}`, "error");
+  }
+}
+
+async function uploadAmenityPhoto(amenityId, file) {
+  const uploadBlob = await optimizeImage(file, { maxSide: 1500, quality: 0.76 });
+  const fileName = `${Date.now()}-${sanitizeFileName(file.name || "amenity.jpg")}`;
+  const storageRef = ref(state.storage, `amenity_orders/${amenityId}/${fileName}`);
+  await uploadBytes(storageRef, uploadBlob, {
+    contentType: uploadBlob.type || file.type || "image/jpeg",
+  });
+  const photoUrl = await getDownloadURL(storageRef);
+  await updateDoc(doc(state.db, "amenity_orders", amenityId), {
+    photoUrl,
+    photoStatus: "done",
+    updatedAt: serverTimestamp(),
+  });
+}
+
+function applyAmenitiesSnapshot(amenities) {
+  state.amenities = amenities;
+  state.amenityMap = new Map(state.amenities.map((amenity) => [amenity.id, amenity]));
+  renderAmenities();
+  updateAmenityTimersAndAlerts();
+}
+
+async function refreshAmenitiesOnce() {
+  if (!state.db || !state.amenitiesQuery || !hasAmenityBoard) return;
+  try {
+    const snapshot = await getDocs(state.amenitiesQuery);
+    applyAmenitiesSnapshot(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+  } catch (error) {
+    console.warn("Amenity fallback refresh failed", error);
+  }
+}
+
+function renderAmenities() {
+  if (!hasAmenityBoard) return;
+  const visibleAmenities = getVisibleAmenities();
+  els.amenityBoard.innerHTML = "";
+
+  if (!visibleAmenities.length) {
+    els.amenityBoard.classList.add("empty-state");
+    els.amenityBoard.innerHTML = `
+      <div class="empty-card">
+        <h3>ยังไม่มีงาน Amenity</h3>
+        <p>เมื่อ Hostess บันทึกงานใหม่ การ์ดจะขึ้นตรงนี้และระบบจะเตือนก่อนเวลาบริการ 30 นาที</p>
+      </div>
+    `;
+    updateAmenityStats();
+    return;
+  }
+
+  els.amenityBoard.classList.remove("empty-state");
+  const fragment = document.createDocumentFragment();
+
+  for (const amenity of visibleAmenities) {
+    const node = els.amenityCardTemplate.content.firstElementChild.cloneNode(true);
+    node.dataset.amenityId = amenity.id;
+
+    node.querySelector(".js-amenity-title").textContent = amenity.itemLabel || "Amenity";
+    node.querySelector(".js-amenity-meta").textContent = `บริการ ${formatDateTime(amenity.serviceAtMs)} • รับงาน: ${amenity.receiverName || "-"}`;
+    node.querySelector(".js-amenity-sender").textContent = amenity.senderName || "-";
+    node.querySelector(".js-amenity-receiver").textContent = amenity.receiverName || "-";
+    node.querySelector(".js-amenity-service").textContent = formatDateTime(amenity.serviceAtMs);
+    node.querySelector(".js-amenity-notes").textContent = amenity.notes || "-";
+    node.querySelector(".js-amenity-photo-state").textContent = describeAmenityPhotoState(amenity.photoStatus);
+
+    const imageEl = node.querySelector(".js-amenity-image");
+    imageEl.src = amenity.photoUrl || PLACEHOLDER_IMAGE;
+
+    attachAmenityCardEvents(node, amenity);
+    fragment.appendChild(node);
+  }
+
+  els.amenityBoard.appendChild(fragment);
+  updateAmenityTimersAndAlerts();
+}
+
+function attachAmenityCardEvents(card, amenity) {
+  const imageOpenBtn = card.querySelector(".js-amenity-image-open");
+  const imageEl = card.querySelector(".js-amenity-image");
+  const acknowledgeBtn = card.querySelector(".js-amenity-ack");
+  const completeBtn = card.querySelector(".js-amenity-complete");
+
+  imageOpenBtn?.addEventListener("click", () => {
+    openImageDialog(imageEl?.src || "", `${amenity.itemLabel || "Amenity"} • ${formatDateTime(amenity.serviceAtMs)}`);
+  });
+
+  acknowledgeBtn?.addEventListener("click", async () => {
+    await updateAmenity(amenity.id, {
+      alertAcknowledged: true,
+      alertAcknowledgedAtMs: Date.now(),
+      status: "acknowledged",
+      updatedAt: serverTimestamp(),
+    });
+    stopAmenityLoopAudio();
+  });
+
+  completeBtn?.addEventListener("click", async () => {
+    await updateAmenity(amenity.id, {
+      completed: true,
+      completedAtMs: Date.now(),
+      status: "completed",
+      updatedAt: serverTimestamp(),
+    });
+    stopAmenityLoopAudio();
+  });
+}
+
+async function updateAmenity(amenityId, patch) {
+  if (!state.db || !amenityId) return;
+  try {
+    await updateDoc(doc(state.db, "amenity_orders", amenityId), patch);
+  } catch (error) {
+    console.error(error);
+    setAmenityStatus(`อัปเดตงาน Amenity ไม่สำเร็จ: ${error.message}`, "error");
+  }
+}
+
+function updateAmenityTimersAndAlerts() {
+  if (!hasAmenityBoard) return;
+  const now = Date.now();
+  const visibleAmenities = getVisibleAmenities();
+  let hasActiveAlarm = false;
+
+  for (const amenity of visibleAmenities) {
+    const card = els.amenityBoard.querySelector(`[data-amenity-id="${amenity.id}"]`);
+    if (!card) continue;
+
+    const serviceAtMs = Number(amenity.serviceAtMs || 0);
+    const remainingMs = serviceAtMs - now;
+    const alerting = shouldAmenityAlert(amenity, now);
+    const timerState = getAmenityTimerState(amenity, now);
+
+    card.classList.remove("amenity-waiting", "amenity-due-soon", "amenity-alerting", "amenity-acknowledged");
+    card.classList.add(timerState.className);
+
+    card.querySelector(".js-amenity-countdown").textContent = formatAmenityCountdown(remainingMs);
+    const statusEl = card.querySelector(".js-amenity-status");
+    statusEl.textContent = timerState.label;
+    statusEl.className = `status-pill js-amenity-status ${timerState.statusClass}`;
+
+    const ackBtn = card.querySelector(".js-amenity-ack");
+    if (ackBtn) {
+      ackBtn.disabled = !!amenity.alertAcknowledged || !alerting;
+      ackBtn.textContent = amenity.alertAcknowledged
+        ? "ปิดเสียงแล้ว"
+        : (alerting ? "ปิดเสียงเตือน" : "รอเวลาเตือน");
+    }
+
+    if (alerting) hasActiveAlarm = true;
+  }
+
+  if (hasActiveAlarm) {
+    startAmenityLoopAudio();
+  } else {
+    stopAmenityLoopAudio();
+  }
+
+  updateAmenityStats();
+}
+
+function getVisibleAmenities() {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  return [...state.amenities]
+    .filter((amenity) => !amenity.softDeleted && !amenity.completed)
+    .filter((amenity) => Number(amenity.serviceAtMs || 0) >= cutoff)
+    .sort((a, b) => Number(a.serviceAtMs || 0) - Number(b.serviceAtMs || 0));
+}
+
+function shouldAmenityAlert(amenity, now = Date.now()) {
+  if (!amenity || amenity.completed || amenity.softDeleted || amenity.alertAcknowledged) return false;
+  const serviceAtMs = Number(amenity.serviceAtMs || 0);
+  if (!Number.isFinite(serviceAtMs) || serviceAtMs <= 0) return false;
+  return serviceAtMs - now <= AMENITY_ALERT_LEAD_MS;
+}
+
+function getAmenityTimerState(amenity, now = Date.now()) {
+  if (amenity.alertAcknowledged) {
+    return { className: "amenity-acknowledged", label: "รับทราบแล้ว", statusClass: "is-complete" };
+  }
+  const serviceAtMs = Number(amenity.serviceAtMs || 0);
+  const remainingMs = serviceAtMs - now;
+  if (remainingMs <= 0) {
+    return { className: "amenity-alerting", label: "ถึงเวลาแล้ว", statusClass: "is-danger" };
+  }
+  if (remainingMs <= AMENITY_ALERT_LEAD_MS) {
+    return { className: "amenity-alerting", label: "เตือนอยู่", statusClass: "is-danger" };
+  }
+  if (remainingMs <= 60 * 60 * 1000) {
+    return { className: "amenity-due-soon", label: "ใกล้เวลา", statusClass: "is-warning" };
+  }
+  return { className: "amenity-waiting", label: "รอเวลา", statusClass: "is-working" };
+}
+
+function updateAmenityStats() {
+  if (!els.amenityActiveCount) return;
+  const now = Date.now();
+  const visibleAmenities = getVisibleAmenities();
+  const dueSoonCount = visibleAmenities.filter((amenity) => {
+    const diff = Number(amenity.serviceAtMs || 0) - now;
+    return diff <= AMENITY_ALERT_LEAD_MS && diff > 0;
+  }).length;
+  const alertingCount = visibleAmenities.filter((amenity) => shouldAmenityAlert(amenity, now)).length;
+  els.amenityActiveCount.textContent = String(visibleAmenities.length);
+  els.amenityDueSoonCount.textContent = String(dueSoonCount);
+  els.amenityAlertingCount.textContent = String(alertingCount);
+}
+
+function prepareAmenityLoopAudio() {
+  if (state.amenityLoopAudio) return state.amenityLoopAudio;
+  try {
+    const audio = new Audio(ALERT_AUDIO_URL);
+    audio.preload = "auto";
+    audio.loop = true;
+    audio.playsInline = true;
+    state.amenityLoopAudio = audio;
+    return audio;
+  } catch (error) {
+    console.warn("prepareAmenityLoopAudio failed", error);
+    return null;
+  }
+}
+
+async function startAmenityLoopAudio() {
+  if (!state.voiceEnabled || document.visibilityState !== "visible") return;
+  const audio = prepareAmenityLoopAudio();
+  if (!audio || state.amenityAlertActive) return;
+  try {
+    audio.currentTime = 0;
+    audio.muted = false;
+    audio.volume = 1;
+    const playPromise = audio.play();
+    state.amenityAlertActive = true;
+    if (playPromise && typeof playPromise.then === "function") await playPromise;
+  } catch (error) {
+    state.amenityAlertActive = false;
+    console.warn("startAmenityLoopAudio failed", error);
+    speakAlertPhrase("ถึงเวลาจัด Amenity แล้วค่ะ กรุณาตรวจสอบงาน");
+  }
+}
+
+function stopAmenityLoopAudio() {
+  const audio = state.amenityLoopAudio;
+  if (!audio) return;
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+  } catch (error) {
+    console.warn("stopAmenityLoopAudio failed", error);
+  }
+  state.amenityAlertActive = false;
+}
+
+function getAmenityItemLabel(itemType, otherText = "") {
+  switch (itemType) {
+    case "cake":
+      return "เค้ก";
+    case "fruit":
+      return "ผลไม้";
+    case "other":
+      return otherText.trim() || "อื่นๆ";
+    default:
+      return "";
+  }
+}
+
+function describeAmenityPhotoState(photoStatus) {
+  switch (photoStatus) {
+    case "uploading":
+      return "กำลังอัปโหลดรูป";
+    case "done":
+      return "มีรูปแล้ว";
+    case "error":
+      return "รูปอัปโหลดไม่สำเร็จ";
+    default:
+      return "รอรูป";
+  }
+}
+
+function setAmenityLoading(isLoading, message = "") {
+  if (!els.amenitySubmitBtn) return;
+  els.amenitySubmitBtn.disabled = isLoading;
+  els.amenitySubmitBtn.textContent = isLoading ? "กำลังบันทึก..." : "Save Amenity";
+  if (message) setAmenityStatus(message);
+}
+
+function resetAmenityForm() {
+  if (!els.amenityForm) return;
+  els.amenityForm.reset();
+  if (els.amenityPhotoPreview) els.amenityPhotoPreview.src = "";
+  els.amenityPhotoPreviewWrap?.classList.add("hidden");
+  hydrateAmenityDefaults();
+  syncAmenityOtherField();
+}
+
+function setAmenityStatus(message = "", type = "") {
+  if (!els.amenityStatus) return;
+  els.amenityStatus.textContent = message;
+  els.amenityStatus.className = `status-text ${type}`.trim();
+}
+
+function parseLocalDateTimeMs(dateValue, timeValue) {
+  if (!dateValue || !timeValue) return NaN;
+  const parsed = new Date(`${dateValue}T${timeValue}:00`);
+  const ms = parsed.getTime();
+  return Number.isFinite(ms) ? ms : NaN;
+}
+
+function toDateInputValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function toTimeInputValue(date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatAmenityCountdown(ms) {
+  const absMs = Math.abs(Number(ms || 0));
+  const totalMinutes = Math.floor(absMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const text = hours > 0 ? `${hours} ชม. ${minutes} นาที` : `${minutes} นาที`;
+  if (ms < 0) return `เลยเวลา ${text}`;
+  return `เหลือ ${text}`;
 }
 
 function renderOrders() {

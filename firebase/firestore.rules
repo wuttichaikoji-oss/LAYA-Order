@@ -8,6 +8,15 @@ service cloud.firestore {
       allow update: if isValidOrderUpdate(request.resource.data);
     }
 
+
+
+    match /amenity_orders/{amenityId} {
+      allow read: if true;
+
+      allow create: if isValidAmenityCreate(request.resource.data);
+      allow update: if isValidAmenityUpdate(request.resource.data);
+    }
+
     match /menu_master/{menuId} {
       allow read: if true;
       allow create, update: if true;
@@ -16,6 +25,60 @@ service cloud.firestore {
     match /ocr_alias/{aliasId} {
       allow read: if true;
       allow create, update: if true;
+    }
+
+
+    function isValidAmenityCreate(data) {
+      return isValidAmenityData(data);
+    }
+
+    function isValidAmenityUpdate(data) {
+      return isValidAmenityData(data);
+    }
+
+    function isValidAmenityData(data) {
+      return data.keys().hasOnly([
+        'itemType',
+        'itemLabel',
+        'otherText',
+        'serviceDate',
+        'serviceTime',
+        'serviceAtMs',
+        'receiverName',
+        'senderName',
+        'notes',
+        'photoUrl',
+        'photoStatus',
+        'status',
+        'alertAcknowledged',
+        'alertAcknowledgedAtMs',
+        'alertStartedAtMs',
+        'completed',
+        'softDeleted',
+        'createdAt',
+        'updatedAt',
+        'createdAtMs',
+        'completedAtMs'
+      ])
+      && data.itemType is string
+      && data.itemLabel is string
+      && data.otherText is string
+      && data.serviceDate is string
+      && data.serviceTime is string
+      && data.serviceAtMs is int
+      && data.receiverName is string
+      && data.senderName is string
+      && data.notes is string
+      && data.photoUrl is string
+      && data.photoStatus is string
+      && data.status is string
+      && data.alertAcknowledged is bool
+      && data.alertAcknowledgedAtMs is int
+      && data.alertStartedAtMs is int
+      && data.completed is bool
+      && data.softDeleted is bool
+      && data.createdAtMs is int
+      && data.completedAtMs is int;
     }
 
     function isValidOrderCreate(data) {

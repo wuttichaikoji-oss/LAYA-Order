@@ -838,3 +838,214 @@ textarea { resize: vertical; }
     border-radius: 22px;
   }
 }
+
+/* Amenity / Hostess workspace v1 */
+select {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.8);
+  color: var(--text);
+  padding: 12px 14px;
+  outline: none;
+}
+
+select:focus {
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12);
+}
+
+.hostess-shell {
+  max-width: 1540px;
+}
+
+.hostess-workspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(360px, 1.05fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.input-panel--hostess {
+  position: static;
+  height: fit-content;
+}
+
+.amenity-input-panel {
+  border-color: rgba(250, 204, 21, 0.20);
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.08), transparent 42%),
+    var(--panel);
+}
+
+.amenity-board-panel {
+  grid-column: 1 / -1;
+  min-height: 420px;
+}
+
+.amenity-badge {
+  color: #fde68a;
+  background: rgba(250, 204, 21, 0.10);
+  border-color: rgba(250, 204, 21, 0.18);
+}
+
+.upload-box--amenity {
+  border-color: rgba(250, 204, 21, 0.42);
+  background: rgba(120, 53, 15, 0.12);
+}
+
+.amenity-preview-wrap {
+  min-height: 260px;
+}
+
+.amenity-preview-wrap img {
+  min-height: 260px;
+  max-height: 420px;
+}
+
+.amenity-field-grid {
+  align-items: start;
+}
+
+.amenity-helper {
+  border-color: rgba(250, 204, 21, 0.16);
+  background: rgba(120, 53, 15, 0.12);
+}
+
+.amenity-save-btn,
+.amenity-complete-btn {
+  background: linear-gradient(135deg, #fde68a, #facc15);
+  color: #1f1300;
+}
+
+.amenity-legend {
+  align-items: center;
+}
+
+.amenity-legend .ghost-btn {
+  width: auto;
+}
+
+.amenity-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 14px;
+}
+
+.amenity-card {
+  position: relative;
+  padding: 14px;
+  border-radius: 22px;
+  background: rgba(8, 17, 31, 0.64);
+  border: 4px solid rgba(34, 197, 94, 0.65);
+  box-shadow: 0 18px 32px rgba(2, 6, 23, 0.22);
+  min-height: 100%;
+  transition: border-color 0.25s ease, background-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.amenity-card.amenity-waiting {
+  border-color: rgba(34, 197, 94, 0.9);
+  background: linear-gradient(180deg, rgba(8, 17, 31, 0.9), rgba(8, 17, 31, 0.72)), rgba(34, 197, 94, 0.08);
+}
+
+.amenity-card.amenity-due-soon {
+  border-color: rgba(250, 204, 21, 1);
+  background: linear-gradient(180deg, rgba(8, 17, 31, 0.9), rgba(8, 17, 31, 0.72)), rgba(250, 204, 21, 0.16);
+  box-shadow: 0 18px 32px rgba(2, 6, 23, 0.22), 0 0 0 2px rgba(250, 204, 21, 0.18);
+}
+
+.amenity-card.amenity-alerting {
+  border-color: rgba(239, 68, 68, 1);
+  background: rgba(127, 29, 29, 0.76);
+  animation: criticalFlash 0.65s linear infinite;
+}
+
+.amenity-card.amenity-acknowledged {
+  border-color: rgba(125, 211, 252, 0.9);
+  background: linear-gradient(180deg, rgba(8, 17, 31, 0.9), rgba(8, 17, 31, 0.72)), rgba(56, 189, 248, 0.10);
+}
+
+.amenity-card.amenity-waiting .timer-value { color: #86efac; }
+.amenity-card.amenity-due-soon .timer-value { color: #fde047; }
+.amenity-card.amenity-alerting .timer-value { color: #fecaca; }
+.amenity-card.amenity-acknowledged .timer-value { color: #7dd3fc; }
+
+.status-pill.is-warning {
+  background: rgba(250, 204, 21, 0.16);
+  color: #fde047;
+}
+
+.status-pill.is-danger {
+  background: rgba(239, 68, 68, 0.20);
+  color: #fecaca;
+}
+
+.amenity-summary {
+  grid-template-columns: 118px minmax(0, 1fr);
+}
+
+.amenity-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.amenity-detail-grid div {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(8, 17, 31, 0.54);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.amenity-detail-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-bottom: 5px;
+}
+
+.amenity-detail-grid strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.96rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.amenity-note-row {
+  grid-column: 1 / -1;
+}
+
+.amenity-complete-btn {
+  width: auto;
+  min-width: 140px;
+}
+
+@media (max-width: 1180px) {
+  .hostess-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .hostess-shell {
+    padding-bottom: 42px;
+  }
+
+  .amenity-board {
+    grid-template-columns: 1fr;
+  }
+
+  .amenity-summary {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .amenity-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .amenity-complete-btn,
+  .amenity-legend .ghost-btn {
+    width: 100%;
+  }
+}

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'laya-order-tracker-v6-sound-alert';
+const CACHE_NAME = 'laya-order-tracker-v7-amenity-alert';
 const APP_SHELL = [
   './',
   './index.html',

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Laya Hostess Order Upload</title>
   <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="หน้ารับออเดอร์สำหรับ Hostess พร้อม OCR และ Firebase" />
+  <meta name="description" content="หน้ารับออเดอร์และสั่งงาน Amenity สำหรับ Hostess พร้อม Firebase" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="assets/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -13,12 +13,12 @@
   <script src="firebase-config.js"></script>
 </head>
 <body data-page="hostess">
-  <div class="app-shell narrow-shell">
+  <div class="app-shell hostess-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">Hostess Order Upload</p>
-        <h1>Laya Kitchen Order Tracker</h1>
-        <p class="subtext">ถ่ายรูปแล้วส่งเข้าบอร์ดครัวทันที ระบบจะอ่านชื่อเมนูด้านหลังโดยไม่บล็อกออเดอร์ถัดไป</p>
+        <p class="eyebrow">Hostess Workspace</p>
+        <h1>Laya Kitchen & Amenity Tracker</h1>
+        <p class="subtext">หน้าเดียวสำหรับส่งออเดอร์เข้าครัว และบันทึกงาน Amenity พร้อมรูปถ่าย เตือนก่อนถึงเวลาบริการ 30 นาที</p>
       </div>
       <div class="topbar-actions topbar-nav">
         <a class="ghost-btn nav-link active" href="hostess.html">Hostess</a>
@@ -30,11 +30,11 @@
 
     <section id="setupNotice" class="notice hidden"></section>
 
-    <main class="single-layout">
-      <section class="panel input-panel input-panel--solo">
+    <main class="hostess-workspace">
+      <section class="panel input-panel input-panel--hostess">
         <div class="panel-head">
           <h2>สแกนเมนูใหม่</h2>
-          <span class="badge">Hostess</span>
+          <span class="badge">Kitchen Order</span>
         </div>
         <form id="orderForm" class="order-form">
           <label class="upload-box">
@@ -64,6 +64,115 @@
           <div id="formStatus" class="status-text"></div>
         </form>
       </section>
+
+      <section class="panel input-panel input-panel--hostess amenity-input-panel">
+        <div class="panel-head">
+          <div>
+            <h2>สั่งงาน Amenity</h2>
+            <p class="muted small">ขั้นตอน: ถ่ายรูปก่อน → กรอกข้อมูล → Save ระบบจะเตือนก่อนเวลาบริการ 30 นาที</p>
+          </div>
+          <span class="badge amenity-badge">Amenity</span>
+        </div>
+
+        <form id="amenityForm" class="order-form amenity-form">
+          <label class="upload-box upload-box--amenity">
+            <input id="amenityPhotoInput" type="file" accept="image/*" capture="environment" required />
+            <span class="upload-title">1) แตะเพื่อถ่ายรูป Amenity ก่อน</span>
+            <span class="upload-sub">เช่น รูปเค้ก ผลไม้ การ์ด หรือรูป setup ที่ต้องเตรียม</span>
+          </label>
+
+          <div id="amenityPhotoPreviewWrap" class="photo-preview-wrap amenity-preview-wrap hidden">
+            <img id="amenityPhotoPreview" alt="ตัวอย่างรูป Amenity" />
+          </div>
+
+          <div class="field-grid two-col amenity-field-grid">
+            <label>
+              <span>สั่งอะไร</span>
+              <select id="amenityItemType" required>
+                <option value="">เลือกประเภท</option>
+                <option value="cake">เค้ก</option>
+                <option value="fruit">ผลไม้</option>
+                <option value="other">อื่นๆ</option>
+              </select>
+            </label>
+
+            <label id="amenityOtherWrap" class="hidden">
+              <span>ระบุรายการอื่นๆ</span>
+              <input id="amenityOtherText" type="text" placeholder="เช่น Honeymoon setup, Birthday card" />
+            </label>
+
+            <label>
+              <span>วันที่ต้องบริการ</span>
+              <input id="amenityServiceDate" type="date" required />
+            </label>
+
+            <label>
+              <span>เวลาที่ต้องบริการ</span>
+              <input id="amenityServiceTime" type="time" required />
+            </label>
+
+            <label>
+              <span>ผู้รับงาน</span>
+              <input id="amenityReceiver" type="text" placeholder="เช่น HK, FB, คุณจอย" required />
+            </label>
+
+            <label>
+              <span>ผู้ส่งงาน</span>
+              <input id="amenitySender" type="text" placeholder="ชื่อ Hostess / FO / Manager" required />
+            </label>
+          </div>
+
+          <label>
+            <span>รายละเอียดเพิ่มเติม (ไม่บังคับ)</span>
+            <textarea id="amenityNotes" rows="3" placeholder="เช่น ห้อง D428, Birthday, ส่งที่ห้อง เวลา 18:00"></textarea>
+          </label>
+
+          <div class="helper-row helper-row--boxed amenity-helper">
+            <small>เมื่อเหลือ 30 นาทีหรือน้อยกว่านั้น ระบบจะเล่นเสียงซ้ำจนกว่าจะกด “ปิดเสียงเตือน” หรือ “ปิดงานแล้ว”</small>
+          </div>
+
+          <button id="amenitySubmitBtn" class="primary-btn amenity-save-btn" type="submit">Save Amenity</button>
+          <div id="amenityStatus" class="status-text"></div>
+        </form>
+      </section>
+
+      <section class="panel board-panel amenity-board-panel">
+        <div class="panel-head wrap">
+          <div>
+            <h2>งาน Amenity วันนี้ / งานที่ยังไม่ปิด</h2>
+            <p class="muted">การ์ดเรียงตามเวลาที่ต้องบริการ คลิกรูปเพื่อขยาย และกดปิดเสียงเมื่อมีคนรับทราบแล้ว</p>
+          </div>
+          <div class="board-stats">
+            <div class="stat-card">
+              <span>Active</span>
+              <strong id="amenityActiveCount">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Due ≤30m</span>
+              <strong id="amenityDueSoonCount">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Alerting</span>
+              <strong id="amenityAlertingCount">0</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend amenity-legend">
+          <span class="legend-pill green">รอเวลา</span>
+          <span class="legend-pill yellow">ใกล้เวลาใน 1 ชม.</span>
+          <span class="legend-pill blinking">เตือนก่อนเวลา 30 นาที</span>
+          <button id="voiceToggleBtn" class="ghost-btn" type="button">🔔 เปิดเสียงแจ้งเตือน</button>
+          <button id="testVoiceBtn" class="ghost-btn" type="button">ทดสอบเสียง</button>
+        </div>
+
+        <div id="amenityBoard" class="amenity-board empty-state">
+          <div class="empty-card">
+            <h3>ยังไม่มีงาน Amenity</h3>
+            <p>เมื่อบันทึกงานใหม่ ระบบจะแสดงการ์ดตรงนี้แบบเรียลไทม์</p>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -91,6 +200,59 @@
       <p class="muted small">หลังบันทึกแล้ว รีเฟรชหน้าเว็บ 1 ครั้งเพื่อเริ่มเชื่อม Firebase</p>
     </form>
   </dialog>
+
+  <dialog id="imageDialog" class="image-dialog">
+    <div class="image-dialog__card">
+      <div class="dialog-head">
+        <div>
+          <h3>ขยายรูป</h3>
+          <p id="imageDialogCaption" class="muted small"></p>
+        </div>
+        <button id="closeImageDialogBtn" class="icon-btn" type="button">✕</button>
+      </div>
+      <div class="image-dialog__body">
+        <img id="imageDialogImg" alt="รูปขยาย" />
+      </div>
+    </div>
+  </dialog>
+
+  <template id="amenityCardTemplate">
+    <article class="amenity-card amenity-waiting">
+      <div class="order-top compact-top">
+        <div>
+          <h3 class="order-title js-amenity-title"></h3>
+          <p class="meta-line js-amenity-meta"></p>
+        </div>
+        <div class="timer-wrap compact-timer amenity-timer">
+          <span class="timer-label">เวลาบริการ</span>
+          <strong class="timer-value js-amenity-countdown"></strong>
+          <span class="status-pill js-amenity-status is-working">รอเวลา</span>
+        </div>
+      </div>
+
+      <div class="compact-summary amenity-summary">
+        <button type="button" class="image-panel compact-image-panel js-amenity-image-open" title="คลิกเพื่อขยายรูปเต็มจอ">
+          <img class="js-amenity-image" alt="รูป Amenity" />
+          <span class="image-zoom-chip js-amenity-photo-state">ขยาย</span>
+        </button>
+        <div class="compact-summary-main">
+          <div class="amenity-detail-grid">
+            <div><span>ผู้ส่งงาน</span><strong class="js-amenity-sender"></strong></div>
+            <div><span>ผู้รับงาน</span><strong class="js-amenity-receiver"></strong></div>
+            <div><span>เวลาบริการ</span><strong class="js-amenity-service"></strong></div>
+            <div class="amenity-note-row"><span>หมายเหตุ</span><strong class="js-amenity-notes"></strong></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="order-bottom compact-bottom">
+        <div class="bottom-actions compact-actions-bottom">
+          <button type="button" class="ghost-btn js-amenity-ack">ปิดเสียงเตือน</button>
+          <button type="button" class="primary-btn amenity-complete-btn js-amenity-complete">ปิดงานแล้ว</button>
+        </div>
+      </div>
+    </article>
+  </template>
 
   <script type="module" src="app.js"></script>
 </body>
