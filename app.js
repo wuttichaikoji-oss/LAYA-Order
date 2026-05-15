@@ -21,6 +21,7 @@ import {
 
 const FIRESTORE_DATABASE_ID = String(window.LAYA_FIRESTORE_DATABASE_ID || "").trim();
 const ALERT_AUDIO_URL = "assets/alerts/chef-alert.mp3";
+const AMENITY_ALERT_AUDIO_URL = "assets/alerts/amenity-gee-alert.mp3";
 const AMENITY_ALERT_LEAD_MS = 30 * 60 * 1000;
 const MENU_CROP = { x: 0.03, y: 0.33, width: 0.94, height: 0.44 };
 const MENU_LINE_BLOCKLIST = /^(cover\b|table\b|room\b|guest\b|check\b|total\b|sub\s*total\b|grand\s*total\b|time\b|date\b|cash\b|change\b|vat\b|tax\b|service\b|waiter\b|cashier\b|invoice\b|receipt\b|discount\b|payment\b|amount\b|the taste\b|panadda\b|paraq?ee\b|cover\s*\d+|t\s*:\s*[a-z0-9-]+\b|#?\(?tt\d+\)?)/i;
@@ -127,6 +128,8 @@ const els = {
   amenityActiveCount: document.getElementById("amenityActiveCount"),
   amenityDueSoonCount: document.getElementById("amenityDueSoonCount"),
   amenityAlertingCount: document.getElementById("amenityAlertingCount"),
+  amenityAlarmBanner: document.getElementById("amenityAlarmBanner"),
+  amenityStopAllBtn: document.getElementById("amenityStopAllBtn"),
 };
 
 const state = {
@@ -139,6 +142,8 @@ const state = {
   voiceEnabled: localStorage.getItem("laya_voice_enabled") === null ? true : loadBoolean("laya_voice_enabled", false),
   alertAudio: null,
   amenityLoopAudio: null,
+  amenityAlertPrimed: false,
+  amenityActiveAlertIds: new Set(),
   alertPrimed: false,
   alertPlaying: false,
   alertMap: new Map(),
@@ -191,6 +196,7 @@ function boot() {
   syncVoiceButton();
   bindStaticEvents();
   prepareAlertAudio();
+  prepareAmenityLoopAudio();
 
   const config = getFirebaseConfig();
   if (isValidFirebaseConfig(config)) {
@@ -222,6 +228,8 @@ function bindStaticEvents() {
     syncAmenityOtherField();
   }
 
+  els.amenityStopAllBtn?.addEventListener("click", handleAmenityStopAllAlerts);
+
   if (hasVoiceControls) {
     els.voiceToggleBtn.addEventListener("click", async () => {
       state.voiceEnabled = !state.voiceEnabled;
@@ -229,7 +237,12 @@ function bindStaticEvents() {
       syncVoiceButton();
       if (state.voiceEnabled) {
         await primeAlertAudio();
-        await playAlertSignal("ออเดอร์ยังไม่เสร็จนะคะเชฟ", { includeSpeech: false });
+        await primeAmenityLoopAudio();
+        if (hasAmenityBoard) {
+          await playAmenityTestSignal();
+        } else {
+          await playAlertSignal("ออเดอร์ยังไม่เสร็จนะคะเชฟ", { includeSpeech: false });
+        }
       } else {
         stopAlertAudio();
         stopAmenityLoopAudio();
@@ -239,11 +252,17 @@ function bindStaticEvents() {
 
     els.testVoiceBtn.addEventListener("click", async () => {
       await primeAlertAudio();
-      await playAlertSignal("ออเดอร์ยังไม่เสร็จนะคะเชฟ", { includeSpeech: false });
+      await primeAmenityLoopAudio();
+      if (hasAmenityBoard) {
+        await playAmenityTestSignal();
+      } else {
+        await playAlertSignal("ออเดอร์ยังไม่เสร็จนะคะเชฟ", { includeSpeech: false });
+      }
     });
 
     const unlockOnce = async () => {
       await primeAlertAudio();
+      await primeAmenityLoopAudio();
       document.removeEventListener("pointerdown", unlockOnce, true);
       document.removeEventListener("keydown", unlockOnce, true);
       document.removeEventListener("touchstart", unlockOnce, true);
@@ -826,6 +845,8 @@ async function handleAmenitySubmit(event) {
       status: "pending",
       alertAcknowledged: false,
       alertAcknowledgedAtMs: 0,
+      alertAcknowledgedBy: "",
+      alertSound: "amenity-gee-alert.mp3",
       alertStartedAtMs: 0,
       completed: false,
       softDeleted: false,
@@ -942,6 +963,7 @@ function attachAmenityCardEvents(card, amenity) {
     await updateAmenity(amenity.id, {
       alertAcknowledged: true,
       alertAcknowledgedAtMs: Date.now(),
+      alertAcknowledgedBy: "hostess",
       status: "acknowledged",
       updatedAt: serverTimestamp(),
     });
@@ -974,6 +996,7 @@ function updateAmenityTimersAndAlerts() {
   const now = Date.now();
   const visibleAmenities = getVisibleAmenities();
   let hasActiveAlarm = false;
+  const activeAlertIds = [];
 
   for (const amenity of visibleAmenities) {
     const card = els.amenityBoard.querySelector(`[data-amenity-id="${amenity.id}"]`);
@@ -1000,8 +1023,14 @@ function updateAmenityTimersAndAlerts() {
         : (alerting ? "ปิดเสียงเตือน" : "รอเวลาเตือน");
     }
 
-    if (alerting) hasActiveAlarm = true;
+    if (alerting) {
+      hasActiveAlarm = true;
+      activeAlertIds.push(amenity.id);
+    }
   }
+
+  state.amenityActiveAlertIds = new Set(activeAlertIds);
+  syncAmenityAlarmBanner(hasActiveAlarm, activeAlertIds.length);
 
   if (hasActiveAlarm) {
     startAmenityLoopAudio();
@@ -1062,7 +1091,7 @@ function updateAmenityStats() {
 function prepareAmenityLoopAudio() {
   if (state.amenityLoopAudio) return state.amenityLoopAudio;
   try {
-    const audio = new Audio(ALERT_AUDIO_URL);
+    const audio = new Audio(AMENITY_ALERT_AUDIO_URL);
     audio.preload = "auto";
     audio.loop = true;
     audio.playsInline = true;
@@ -1071,6 +1100,89 @@ function prepareAmenityLoopAudio() {
   } catch (error) {
     console.warn("prepareAmenityLoopAudio failed", error);
     return null;
+  }
+}
+
+async function primeAmenityLoopAudio() {
+  const audio = prepareAmenityLoopAudio();
+  if (!audio || state.amenityAlertPrimed) return;
+  try {
+    audio.muted = true;
+    audio.volume = 0;
+    audio.currentTime = 0;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = false;
+    audio.volume = 1;
+    state.amenityAlertPrimed = true;
+  } catch (error) {
+    audio.muted = false;
+    audio.volume = 1;
+    console.warn("primeAmenityLoopAudio failed", error);
+  }
+}
+
+async function playAmenityTestSignal() {
+  const audio = prepareAmenityLoopAudio();
+  if (!audio) return;
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = false;
+    audio.volume = 1;
+    await audio.play();
+    window.setTimeout(() => {
+      if (!state.amenityActiveAlertIds.size) stopAmenityLoopAudio();
+    }, 3200);
+  } catch (error) {
+    console.warn("playAmenityTestSignal failed", error);
+    speakAlertPhrase("ทดสอบเสียง Amenity ไม่สำเร็จ กรุณากดเปิดเสียงบนเครื่อง");
+  }
+}
+
+async function handleAmenityStopAllAlerts() {
+  const activeIds = Array.from(state.amenityActiveAlertIds || []);
+  if (!activeIds.length) {
+    stopAmenityLoopAudio();
+    syncAmenityAlarmBanner(false, 0);
+    return;
+  }
+
+  if (els.amenityStopAllBtn) {
+    els.amenityStopAllBtn.disabled = true;
+    els.amenityStopAllBtn.textContent = "กำลังปิดเพลง...";
+  }
+
+  try {
+    const nowMs = Date.now();
+    await Promise.all(activeIds.map((amenityId) => updateDoc(doc(state.db, "amenity_orders", amenityId), {
+      alertAcknowledged: true,
+      alertAcknowledgedAtMs: nowMs,
+      alertAcknowledgedBy: "hostess",
+      status: "acknowledged",
+      updatedAt: serverTimestamp(),
+    })));
+    stopAmenityLoopAudio();
+    setAmenityStatus(`ปิดเพลงเตือน Amenity แล้ว (${activeIds.length} งาน)`, "success");
+  } catch (error) {
+    console.error(error);
+    setAmenityStatus(`ปิดเพลงเตือนไม่สำเร็จ: ${error.message}`, "error");
+  } finally {
+    if (els.amenityStopAllBtn) {
+      els.amenityStopAllBtn.disabled = false;
+      els.amenityStopAllBtn.textContent = "🛑 ปิดเพลงเตือน Amenity";
+    }
+  }
+}
+
+function syncAmenityAlarmBanner(isActive, count = 0) {
+  els.amenityAlarmBanner?.classList.toggle("hidden", !isActive);
+  if (els.amenityStopAllBtn) {
+    els.amenityStopAllBtn.classList.toggle("hidden", !isActive);
+    els.amenityStopAllBtn.textContent = count > 1
+      ? `🛑 ปิดเพลงเตือน Amenity (${count} งาน)`
+      : "🛑 ปิดเพลงเตือน Amenity";
   }
 }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'laya-order-tracker-v7-amenity-alert';
+const CACHE_NAME = 'laya-order-tracker-v8-amenity-gee-alert';
 const APP_SHELL = [
   './',
   './index.html',
@@ -11,7 +11,8 @@ const APP_SHELL = [
   './manifest.webmanifest',
   './assets/icon-192.png',
   './assets/icon-512.png',
-  './assets/alerts/chef-alert.mp3'
+  './assets/alerts/chef-alert.mp3',
+  './assets/alerts/amenity-gee-alert.mp3'
 ];
 
 self.addEventListener('install', (event) => {

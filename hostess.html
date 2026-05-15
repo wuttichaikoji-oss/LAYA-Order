@@ -163,7 +163,15 @@
           <span class="legend-pill yellow">ใกล้เวลาใน 1 ชม.</span>
           <span class="legend-pill blinking">เตือนก่อนเวลา 30 นาที</span>
           <button id="voiceToggleBtn" class="ghost-btn" type="button">🔔 เปิดเสียงแจ้งเตือน</button>
-          <button id="testVoiceBtn" class="ghost-btn" type="button">ทดสอบเสียง</button>
+          <button id="testVoiceBtn" class="ghost-btn" type="button">ทดสอบเพลง Amenity</button>
+        </div>
+
+        <div id="amenityAlarmBanner" class="amenity-alarm-banner hidden" role="alert">
+          <div>
+            <strong>🔊 กำลังเล่นเพลงเตือน Amenity</strong>
+            <span>มีงานที่เหลือเวลา 30 นาทีหรือน้อยกว่า เพลงจะวนลูปจนกว่าจะกดปิด</span>
+          </div>
+          <button id="amenityStopAllBtn" class="ghost-btn amenity-stop-all-btn" type="button">🛑 ปิดเพลงเตือน Amenity</button>
         </div>
 
         <div id="amenityBoard" class="amenity-board empty-state">

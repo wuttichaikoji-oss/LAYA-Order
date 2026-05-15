@@ -1049,3 +1049,55 @@ select:focus {
     width: 100%;
   }
 }
+
+
+.amenity-alarm-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 14px 0;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(248, 113, 113, 0.42);
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.62), rgba(185, 28, 28, 0.36));
+  box-shadow: 0 18px 32px rgba(127, 29, 29, 0.24);
+  animation: criticalFlash 0.9s linear infinite;
+}
+
+.amenity-alarm-banner strong,
+.amenity-alarm-banner span {
+  display: block;
+}
+
+.amenity-alarm-banner span {
+  margin-top: 4px;
+  color: #fee2e2;
+  font-size: 0.92rem;
+}
+
+.amenity-stop-all-btn {
+  border-color: rgba(254, 202, 202, 0.7) !important;
+  background: rgba(239, 68, 68, 0.92) !important;
+  color: #fff !important;
+  min-width: 220px;
+  font-weight: 800;
+  box-shadow: 0 12px 24px rgba(127, 29, 29, 0.28);
+}
+
+.amenity-stop-all-btn:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+@media (max-width: 760px) {
+  .amenity-alarm-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .amenity-stop-all-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
