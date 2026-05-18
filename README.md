@@ -6,10 +6,11 @@
 
 ## เวอร์ชันนี้มีอะไรใหม่
 
-- แยกหน้าใช้งานเป็น 3 หน้า
+- แยกหน้าใช้งานเป็น 4 หน้า
   - `hostess.html` สำหรับรับออเดอร์
   - `kitchen.html` สำหรับจอครัว
   - `dashboard.html` สำหรับหน้าแบบรวม
+  - `room-order-gateway.html` สำหรับ QR กลาง Scan & Dine ให้ลูกค้ากรอกเลขห้อง
 - `index.html` เป็นหน้าเลือกโหมดใช้งาน
 - ฝั่งครัวคลิกรูปบนการ์ดเพื่อขยายเต็มจอได้
 - ค่า Firebase ถูกใส่ไว้แล้ว และตั้ง Firestore database เป็น `laya` เรียบร้อย
@@ -36,6 +37,8 @@
 - `hostess.html` หน้ารับออเดอร์
 - `kitchen.html` หน้าจอครัว
 - `dashboard.html` หน้าแบบรวม
+- `room-order-gateway.html` หน้า QR กลางให้ลูกค้ากรอกเลขห้องแล้ว redirect ไปลิงก์สั่งอาหาร
+- `room_order_links.json` ตารางจับคู่เลขห้องกับลิงก์สั่งอาหารจาก QR 529 ห้อง
 - `styles.css` รูปแบบหน้าจอ
 - `app.js` ระบบหลักทั้งหมด
 - `firebase-config.js` ไฟล์ config Firebase ที่ตั้งไว้แล้ว
@@ -119,3 +122,26 @@ OCR อ่านได้ดีที่สุดเมื่อ:
 ครั้งแรกที่เปิดระบบ ถ้า collection `menu_master` ยังว่าง แอพจะ seed รายชื่อเมนูเริ่มต้นให้เองจากรายการเมนูของร้านที่ฝังไว้ในโค้ด
 
 อย่าลืม Publish `firebase/firestore.rules` เวอร์ชันใหม่ด้วย เพื่อให้ collection `menu_master` และ `ocr_alias` เขียนข้อมูลได้
+
+
+## Scan & Dine QR กลาง
+
+เวอร์ชันนี้เพิ่มหน้า `room-order-gateway.html` สำหรับใช้ QR กลาง 1 อันแทน QR แยกห้องทั้งหมด
+
+การทำงาน:
+1. ลูกค้าสแกน QR กลาง
+2. เปิดหน้า `room-order-gateway.html`
+3. ลูกค้ากรอกเลขห้อง เช่น `A101`, `D428`, `D101B`
+4. ระบบอ่านไฟล์ `room_order_links.json`
+5. ถ้าพบห้อง จะ redirect ไปยังลิงก์สั่งอาหารของห้องนั้นทันที
+
+ไฟล์ที่เกี่ยวข้อง:
+- `room-order-gateway.html`
+- `room_order_links.json`
+- `room_order_links.csv` สำหรับเปิดเช็กใน Excel
+
+ลิงก์ที่ควรเอาไปทำ QR กลาง:
+- ถ้าอัปโหลดไว้ root ของ GitHub Pages: `https://ชื่อโดเมน/room-order-gateway.html`
+- ถ้าอยู่ในโฟลเดอร์ย่อย: `https://ชื่อโดเมน/ชื่อโฟลเดอร์/room-order-gateway.html`
+
+หลังอัปเดตไฟล์บน GitHub Pages แล้ว แนะนำให้เปิดเว็บและกด `Ctrl + F5` 1 ครั้ง เพื่อให้ Service Worker โหลดไฟล์ใหม่

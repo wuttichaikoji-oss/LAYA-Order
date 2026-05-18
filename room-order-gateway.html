@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>LAYA Scan & Dine | Room Gateway</title>
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="Central QR gateway for LAYA room order links" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body[data-page="room-gateway"] {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(250, 204, 21, 0.16), transparent 26%),
+        radial-gradient(circle at bottom right, rgba(56, 189, 248, 0.14), transparent 28%),
+        linear-gradient(145deg, #050812 0%, #0f172a 48%, #16100a 100%);
+    }
+    .gateway-shell {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px 14px;
+    }
+    .gateway-card {
+      width: min(480px, 100%);
+      padding: 26px;
+      position: relative;
+      overflow: hidden;
+    }
+    .gateway-card::before {
+      content: "";
+      position: absolute;
+      inset: -90px -80px auto auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 999px;
+      background: rgba(250, 204, 21, 0.12);
+      pointer-events: none;
+    }
+    .gateway-brand {
+      text-align: center;
+      margin-bottom: 20px;
+      position: relative;
+      z-index: 1;
+    }
+    .gateway-logo {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 42px;
+      letter-spacing: 0.22em;
+      line-height: 1;
+      color: #f8fafc;
+    }
+    .gateway-resort {
+      margin-top: 8px;
+      letter-spacing: 0.18em;
+      font-size: 0.76rem;
+      color: #cbd5e1;
+    }
+    .gateway-title {
+      text-align: center;
+      font-size: clamp(2rem, 8vw, 3rem);
+      margin: 8px 0 8px;
+      letter-spacing: 0.04em;
+    }
+    .gateway-copy {
+      text-align: center;
+      color: var(--muted);
+      line-height: 1.55;
+      margin-bottom: 22px;
+    }
+    .room-entry-box {
+      border-radius: 22px;
+      padding: 18px;
+      background: rgba(8, 17, 31, 0.5);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+    .gateway-input {
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 1.55rem;
+      font-weight: 800;
+      padding: 16px 18px;
+      background: rgba(2, 6, 23, 0.75);
+    }
+    .gateway-btn {
+      width: 100%;
+      margin-top: 14px;
+      padding: 15px 18px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #fde68a, #d97706);
+      color: #1f1304;
+      font-weight: 900;
+      box-shadow: 0 16px 36px rgba(217, 119, 6, 0.22);
+    }
+    .gateway-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .gateway-message {
+      min-height: 24px;
+      margin: 14px 0 0;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.45;
+      font-size: 0.93rem;
+    }
+    .gateway-message.error { color: #fecaca; font-weight: 800; }
+    .gateway-message.ok { color: #bbf7d0; font-weight: 800; }
+    .gateway-help {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(148, 163, 184, 0.18);
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    .gateway-actions {
+      margin-top: 16px;
+      display: flex;
+      justify-content: center;
+    }
+    .gateway-actions .ghost-btn { text-decoration: none; }
+    @media (max-width: 520px) {
+      .gateway-card { padding: 22px 16px; border-radius: 28px; }
+      .gateway-logo { font-size: 36px; }
+      .room-entry-box { padding: 14px; }
+    }
+  </style>
+</head>
+<body data-page="room-gateway">
+  <main class="gateway-shell">
+    <section class="gateway-card panel" aria-labelledby="gatewayTitle">
+      <div class="gateway-brand">
+        <div class="gateway-logo">LAYA</div>
+        <div class="gateway-resort">RESORT PHUKET</div>
+      </div>
+
+      <h1 id="gatewayTitle" class="gateway-title">Scan &amp; Dine</h1>
+      <p class="gateway-copy">Enter your room number to open the correct in-room dining order page.</p>
+
+      <form id="roomGatewayForm" class="room-entry-box">
+        <label for="roomInput">
+          <span>Room Number</span>
+          <input id="roomInput" class="gateway-input" name="room" autocomplete="off" inputmode="text" placeholder="A101" maxlength="12" />
+        </label>
+        <button id="gatewaySubmitBtn" class="gateway-btn" type="submit" disabled>Start Order</button>
+        <p id="gatewayMessage" class="gateway-message">Loading room list...</p>
+      </form>
+
+      <div class="gateway-help">
+        Example: A101, B205, D428 or D101B<br />
+        If you need assistance, please contact Front Desk.
+      </div>
+      <div class="gateway-actions">
+        <a class="ghost-btn nav-link" href="index.html">← Back to menu</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const ROOM_LINKS_FILE = "room_order_links.json";
+    const els = {
+      form: document.getElementById("roomGatewayForm"),
+      input: document.getElementById("roomInput"),
+      btn: document.getElementById("gatewaySubmitBtn"),
+      msg: document.getElementById("gatewayMessage"),
+    };
+
+    let roomLinks = {};
+    let roomKeys = [];
+    let ready = false;
+
+    function normalizeRoom(value) {
+      return String(value || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "")
+        .replace(/-/g, "");
+    }
+
+    function setMessage(text, type = "") {
+      els.msg.textContent = text;
+      els.msg.className = "gateway-message" + (type ? " " + type : "");
+    }
+
+    function findRoom(room) {
+      if (roomLinks[room]) return { room, url: roomLinks[room] };
+
+      // Guest enters only 101 / 101B: help if there is exactly one matching room.
+      if (/^\d{2,4}[A-Z]?$/.test(room)) {
+        const matched = roomKeys.filter((key) => key.endsWith(room));
+        if (matched.length === 1) return { room: matched[0], url: roomLinks[matched[0]] };
+        if (matched.length > 1) return { ambiguous: true, choices: matched.slice(0, 8) };
+      }
+
+      return null;
+    }
+
+    async function loadRoomLinks() {
+      try {
+        const response = await fetch(ROOM_LINKS_FILE + "?v=" + Date.now(), { cache: "no-store" });
+        if (!response.ok) throw new Error("Cannot load " + ROOM_LINKS_FILE);
+        roomLinks = await response.json();
+        roomKeys = Object.keys(roomLinks).sort();
+        ready = true;
+        els.btn.disabled = false;
+        setMessage("Room list ready. Please enter your room number.");
+        els.input.focus();
+      } catch (error) {
+        console.error(error);
+        setMessage("Room list is not ready. Please contact staff.", "error");
+      }
+    }
+
+    els.input.addEventListener("input", () => {
+      const value = normalizeRoom(els.input.value);
+      if (els.input.value !== value) els.input.value = value;
+      if (ready && value) setMessage("Press Start Order to continue.");
+    });
+
+    els.form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!ready) return;
+
+      const room = normalizeRoom(els.input.value);
+      if (!room) {
+        setMessage("Please enter your room number.", "error");
+        els.input.focus();
+        return;
+      }
+
+      const found = findRoom(room);
+      if (!found) {
+        setMessage("Room not found. Please check your room number or contact Front Desk.", "error");
+        return;
+      }
+
+      if (found.ambiguous) {
+        setMessage("Please include building letter. Matching rooms: " + found.choices.join(", "), "error");
+        return;
+      }
+
+      setMessage("Opening order page for room " + found.room + "...", "ok");
+      window.location.assign(found.url);
+    });
+
+    loadRoomLinks();
+  </script>
+</body>
+</html>

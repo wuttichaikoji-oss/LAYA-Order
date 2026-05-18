@@ -1,10 +1,12 @@
-const CACHE_NAME = 'laya-order-tracker-v8-amenity-gee-alert';
+const CACHE_NAME = 'laya-order-tracker-v9-scan-dine-gateway';
 const APP_SHELL = [
   './',
   './index.html',
   './hostess.html',
   './kitchen.html',
   './dashboard.html',
+  './room-order-gateway.html',
+  './room_order_links.json',
   './styles.css',
   './app.js',
   './firebase-config.js',
@@ -37,7 +39,7 @@ self.addEventListener('fetch', (event) => {
 
   const isNetworkFirst =
     event.request.mode === 'navigate' ||
-    /\.(html|js|css|webmanifest)$/i.test(url.pathname) ||
+    /\.(html|js|css|json|webmanifest)$/i.test(url.pathname) ||
     url.pathname.endsWith('/firebase-config.js');
 
   if (isNetworkFirst) {
