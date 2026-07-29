@@ -1,4 +1,4 @@
-const CACHE_NAME = 'laya-order-tracker-v9-scan-dine-gateway';
+const CACHE_NAME = 'laya-order-tracker-v10-navy-gateway';
 const APP_SHELL = [
   './',
   './index.html',

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>LAYA Scan & Dine | Room Gateway</title>
-  <meta name="theme-color" content="#0f172a" />
+  <meta name="theme-color" content="#0b1f3a" />
   <meta name="description" content="Central QR gateway for LAYA room order links" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="assets/icon-192.png" />
@@ -12,10 +12,7 @@
   <style>
     body[data-page="room-gateway"] {
       min-height: 100vh;
-      background:
-        radial-gradient(circle at top left, rgba(250, 204, 21, 0.16), transparent 26%),
-        radial-gradient(circle at bottom right, rgba(56, 189, 248, 0.14), transparent 28%),
-        linear-gradient(145deg, #050812 0%, #0f172a 48%, #16100a 100%);
+      background: #0b1f3a;
     }
     .gateway-shell {
       min-height: 100vh;
@@ -38,25 +35,6 @@
       border-radius: 999px;
       background: rgba(250, 204, 21, 0.12);
       pointer-events: none;
-    }
-    .gateway-brand {
-      text-align: center;
-      margin-bottom: 20px;
-      position: relative;
-      z-index: 1;
-    }
-    .gateway-logo {
-      font-family: Georgia, "Times New Roman", serif;
-      font-size: 42px;
-      letter-spacing: 0.22em;
-      line-height: 1;
-      color: #f8fafc;
-    }
-    .gateway-resort {
-      margin-top: 8px;
-      letter-spacing: 0.18em;
-      font-size: 0.76rem;
-      color: #cbd5e1;
     }
     .gateway-title {
       text-align: center;
@@ -123,7 +101,6 @@
     .gateway-actions .ghost-btn { text-decoration: none; }
     @media (max-width: 520px) {
       .gateway-card { padding: 22px 16px; border-radius: 28px; }
-      .gateway-logo { font-size: 36px; }
       .room-entry-box { padding: 14px; }
     }
   </style>
@@ -131,11 +108,6 @@
 <body data-page="room-gateway">
   <main class="gateway-shell">
     <section class="gateway-card panel" aria-labelledby="gatewayTitle">
-      <div class="gateway-brand">
-        <div class="gateway-logo">LAYA</div>
-        <div class="gateway-resort">RESORT PHUKET</div>
-      </div>
-
       <h1 id="gatewayTitle" class="gateway-title">Scan &amp; Dine</h1>
       <p class="gateway-copy">Enter your room number to open the correct in-room dining order page.</p>
 
